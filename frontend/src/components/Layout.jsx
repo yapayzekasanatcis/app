@@ -22,15 +22,15 @@ export const Layout = () => {
       </main>
 
       {/* Floating NOVA + Push-to-talk (mobile) */}
-      <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 nova-glass border-t border-[color:var(--nova-border)] px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className={`h-10 w-10 rounded-full nova-orb ${novaState}`} />
+      <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 nova-glass border-t border-[color:var(--nova-border)] px-3 py-3 flex items-center justify-between gap-2 overflow-hidden">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className={`nova-orb nova-orb-compact shrink-0 ${novaState}`} />
           <div>
             <div className="font-mono-nova text-[10px] uppercase tracking-widest text-[color:var(--nova-text-3)]">NOVA</div>
             <div className="text-sm">{novaState === "idle" ? "Hazır" : novaState === "listening" ? "Dinliyor" : novaState === "thinking" ? "Düşünüyor" : "Konuşuyor"}</div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <Dialog>
             <DialogTrigger asChild>
               <button data-testid="open-chat-mobile" className="h-12 w-12 rounded-full bg-[color:var(--nova-bg-3)] grid place-items-center">

@@ -22,6 +22,8 @@ from openai import AsyncOpenAI
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
+import google_integration as gint
+
 EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
 SESSION_SECRET = os.environ['SESSION_SECRET']
 AUTH_DATA_URL = os.environ['EMERGENT_AUTH_DATA_URL']
@@ -187,70 +189,144 @@ async def auth_logout(request: Request, response: Response):
 
 
 # ---------- Context prompt builder ----------
-async def build_system_prompt(user: dict) -> str:
+TR_WEEKDAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+TR_MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
+             "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
+
+
+def today_turkish_facts():
+    """Return objective date facts only."""
+    now = datetime.now(timezone.utc)
+    weekday_name = TR_WEEKDAYS[now.weekday()]
+    day = now.day
+    month_name = TR_MONTHS[now.month - 1]
+    year = now.year
+    return {
+        "weekday": weekday_name,
+        "date_str": f"{day} {month_name} {year} {weekday_name}",
+        "iso": now.strftime("%Y-%m-%d"),
+    }
+
+
+async def build_system_prompt(
+    user: dict,
+    google_calendar_summary: str = "",
+    google_workspace_summary: str = "",
+) -> str:
     """Build NOVA's persona + current context from user data."""
     name = user.get("name", "Bora")
-    today = datetime.now(timezone.utc).strftime("%d.%m.%Y %A")
-    # Pull a lightweight context snapshot
+    facts = today_turkish_facts()
+
     tasks = await db.tasks.find(
         {"user_id": user["id"], "completed": False},
         {"_id": 0}
     ).to_list(50)
-    events_today = await db.events.find(
-        {"user_id": user["id"]},
+    local_events = await db.events.find(
+        {"user_id": user["id"], "start_time": {"$gte": facts["iso"], "$lt": facts["iso"] + "T23:59:59"}},
         {"_id": 0}
-    ).to_list(50)
+    ).sort("start_time", 1).to_list(50)
 
     pending = "\n".join(
         f"- [{t.get('priority','normal').upper()}] {t['title']} ({t.get('context','')})"
         for t in tasks[:15]
-    ) or "(bekleyen iş yok)"
+    ) or "YOK"
 
-    events_summary = "\n".join(
-        f"- {e['start_time'][:16].replace('T',' ')} - {e['title']} ({e.get('location','') or 'konum yok'})"
-        for e in events_today[:15]
-    ) or "(takvim boş)"
+    local_events_summary = "\n".join(
+        f"- {e['start_time'][11:16]} {e['title']} ({e.get('location','') or 'konum belirtilmemiş'})"
+        for e in local_events[:15]
+    ) or "YOK"
 
-    return f"""Sen NOVA ASİSTAN'sın — Bora Bey'in kişisel özel sekreteri ve yapay zekâ yöneticisisin.
+    gc_block = google_calendar_summary.strip() if google_calendar_summary.strip() else "GOOGLE_TAKVIM_BAGLI_DEGIL"
+    workspace_block = google_workspace_summary.strip() if google_workspace_summary.strip() else "GOOGLE_WORKSPACE_BAGLI_DEGIL"
 
-KİMLİK:
-- Adın NOVA. Her zaman Türkçe konuşursun.
-- Tonun: sıcak, sakin, saygılı, profesyonel. Robotik DEĞİL.
-- Bora Bey'e saygılı hitap edersin ("Bora Bey", "siz" gibi) ama resmi kalmazsın.
-- Cevapların kısa, net ve aksiyon odaklıdır. Gereksiz uzatma.
-- Teknik İngilizce terimleri kullanmazsın.
+    return f"""Sen NOVA ASİSTAN'sın — Bora Bey'in kişisel özel sekreteri.
 
-KULLANICI: {name}
-BUGÜN: {today}
+KİMLİK: Türkçe konuşursun. Tonun sıcak, sakin, saygılı, profesyonel; robotik DEĞİL. "Bora Bey" diye hitap edersin. Cevapların kısa, net, aksiyon odaklı.
 
-BORA BEY'İN HAYATI (bağlam):
-- İşletme: Komagene (çiğköfte zinciri, 11:00-02:00 çalışır). Her ayın 15'i %50 bedava çiğköfte günü, 14'ü hazırlık (balon+afiş). Salı+Cuma 16:00'a kadar merkez siparişi, Çarşamba+Cumartesi sevkiyat gelir.
-- İş: Tiyatral Nikâh organizasyonları (şehir dışı seyahatler sık).
-- İş: Bora AI Stüdyo — Ekim 2026 planı: Avin Zerin, Korkut Erdağ, Grup Karadüş için ayda 2 şarkı. Aktif: Kadına Şiddet Serisi, Grup Karadüş klibi, sırada Çocuk İstismarı projesi.
-- Özel: Tuğba (eş/sevgili) doğum günü 10 Kasım 1990 — ASLA unutma, önceden hatırlat. Sürprizleri ortak takvime YAZMA.
-- Önemli günler: Bora 12 Mayıs, Anne 13 Temmuz, Tolga (abi) 29 Temmuz, Atakan 11 Ocak, 14 Şubat Sevgililer, 8 Mart Kadınlar Günü.
-- Yemek: Fast food, köfte, et, pizza (sebzesiz, mayonezsiz). İçecek: Coca-Cola. Enerji: Red Bull, Tadelle+soğuk su.
-- Ulaşım: Fiat Egea; yakın yollara özel araç, orta mesafe otobüs (en ön tekli koltuk tercih), uzağa uçak/otobüs karşılaştır.
-- Otel: Orduevi > ekonomik 3+ yıldız, kahvaltı dahil.
-- Çalışma düzeni: Uyanış 08-12 arası, dükkânda 19'da, kapanış 02, uyku 04.
+BUGÜN: {facts['date_str']}
 
-GÜVENLİK:
-- Onay almadan ödeme yapma, bilet alma, rezervasyon kesinleştirme, önemli mail gönderme, etkinlik silme.
-- Önce öneri sun, sonra onay iste.
+── KESİN KURALLAR (BUNA UY) ──
+1) ASLA bilgi uydurma. Sadece aşağıda GERÇEK VERİ olarak verilen bilgileri kullan.
+2) Bir veri alanı YOK veya GOOGLE_TAKVIM_BAGLI_DEGIL diyorsa, "bu bilgi henüz bağlı değil / sistemde yok" de — tahmin etme, örnek verme.
+3) Komagene rutinlerini yalnızca GOOGLE WORKSPACE GERÇEK VERİ bölümünde bulunuyorsa söyle.
+4) Takvim etkinliklerini sadece aşağıda yazdığı saat ve isimle söyle. Saat uydurma.
+5) Bekleyen işleri sadece aşağıdaki listede varsa söyle.
+6) Bir tarih, rutin veya görev aşağıdaki gerçek veri alanlarında yoksa onu söyleme.
 
-BUGÜNKÜ TAKVİM:
-{events_summary}
+── GOOGLE TAKVİM BUGÜN (gerçek) ──
+{gc_block}
 
-BEKLEYEN İŞLER:
+── GOOGLE WORKSPACE GERÇEK VERİ ──
+{workspace_block}
+
+── UYGULAMA İÇİ YEREL ETKİNLİKLER BUGÜN ──
+{local_events_summary}
+
+── BEKLEYEN İŞLER ──
 {pending}
 
-Yanıtların doğal akışlı Türkçe olsun. Liste veririsen kısa ve okunabilir olsun."""
+GÜVENLİK: Onay almadan ödeme/rezervasyon/mail/etkinlik silme yapma."""
 
 
 # ---------- Chat ----------
+async def _google_calendar_summary_for_prompt(user: dict) -> str:
+    """Fetch today's Google Calendar events for the prompt; return empty if not connected."""
+    try:
+        if not gint.is_configured():
+            return "GOOGLE_OAUTH_YAPILANDIRILMADI"
+        if not await gint.is_connected(db, user["id"]):
+            return "GOOGLE_TAKVIM_BAGLI_DEGIL"
+        events = await gint.get_todays_calendar_events(db, user["id"])
+        if not events:
+            return "Bugün için Google Takvim'de etkinlik YOK."
+        lines = []
+        for e in events:
+            start = e.get("start", "")
+            # Extract HH:MM if datetime, else "Tüm gün"
+            time_str = "Tüm gün"
+            if "T" in start:
+                time_str = start[11:16]
+            loc = f" — {e['location']}" if e.get("location") else ""
+            lines.append(f"- {time_str} {e['title']}{loc} [takvim: {e.get('calendar','')}]")
+        return "\n".join(lines)
+    except HTTPException:
+        return "GOOGLE_TAKVIM_HATASI"
+    except Exception as e:
+        logger.exception("google calendar fetch failed")
+        return f"GOOGLE_TAKVIM_HATASI: {str(e)[:60]}"
+
+
+async def _google_workspace_summary_for_prompt(user: dict) -> str:
+    """Read real Sheets/Docs context; never substitute sample data."""
+    if not gint.is_configured() or not await gint.is_connected(db, user["id"]):
+        return "GOOGLE_WORKSPACE_BAGLI_DEGIL"
+    sections = []
+    try:
+        sheet = await gint.get_sheet_data(db, user["id"])
+        if sheet:
+            for tab in ("İşler", "Projeler", "Rutinler"):
+                rows = sheet.get(tab, [])
+                rendered = "\n".join(" | ".join(map(str, row)) for row in rows[:30])
+                sections.append(f"{tab}:\n{rendered or 'VERİ YOK'}")
+        else:
+            sections.append("NOVA İş Merkezi: DOSYA BULUNAMADI")
+    except Exception:
+        logger.exception("google sheets fetch failed")
+        sections.append("NOVA İş Merkezi: OKUMA HATASI")
+    try:
+        doc = await gint.get_core_doc_text(db, user["id"])
+        sections.append(f"Çekirdek Kurallar:\n{doc['text'][:12000]}" if doc else "Çekirdek Kurallar: DOSYA BULUNAMADI")
+    except Exception:
+        logger.exception("google docs fetch failed")
+        sections.append("Çekirdek Kurallar: OKUMA HATASI")
+    return "\n\n".join(sections)
+
+
 @api.post("/chat")
 async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
-    system_prompt = await build_system_prompt(user)
+    gc_summary = await _google_calendar_summary_for_prompt(user)
+    workspace_summary = await _google_workspace_summary_for_prompt(user)
+    system_prompt = await build_system_prompt(user, gc_summary, workspace_summary)
     session_id = f'{user["id"]}:{body.conversation_id}'
     try:
         client = LlmChat(
@@ -294,11 +370,12 @@ async def chat_history(user: Annotated[dict, Depends(current_user)], conversatio
 # ---------- Daily briefing ----------
 @api.get("/briefing/today")
 async def briefing_today(user: Annotated[dict, Depends(current_user)]):
-    """Generate NOVA's natural-sounding today briefing."""
+    """Generate NOVA's natural-sounding today briefing from REAL data only."""
     today = datetime.now(timezone.utc)
     today_str = today.strftime("%Y-%m-%d")
 
-    events = await db.events.find({
+    # Local app events
+    local_events = await db.events.find({
         "user_id": user["id"],
         "start_time": {"$gte": today_str, "$lt": today_str + "T23:59:59"}
     }, {"_id": 0}).sort("start_time", 1).to_list(50)
@@ -306,29 +383,45 @@ async def briefing_today(user: Annotated[dict, Depends(current_user)]):
     tasks = await db.tasks.find({
         "user_id": user["id"], "completed": False
     }, {"_id": 0}).to_list(50)
-
     priorities = [t for t in tasks if t.get("is_priority")]
 
-    system_prompt = await build_system_prompt(user)
+    # Real Google Calendar events
+    gc_summary = await _google_calendar_summary_for_prompt(user)
+    google_connected = gint.is_configured() and await gint.is_connected(db, user["id"])
+    google_events = []
+    if google_connected:
+        try:
+            google_events = await gint.get_todays_calendar_events(db, user["id"])
+        except Exception:
+            google_events = []
+
+    workspace_summary = await _google_workspace_summary_for_prompt(user)
+    system_prompt = await build_system_prompt(user, gc_summary, workspace_summary)
     prompt = (
-        "Bugünün brifingini ver. Sade bir sekreter tonuyla, 3-5 cümle, "
-        "madde listesi değil akıcı paragraf şeklinde. 'Günaydın Bora Bey' ile başla. "
-        "Bugünkü sabit programları, kritik saatleri ve günün önemli işlerini birleştir."
+        "Bugünün brifingini ver. Kurallar: "
+        "(1) Sadece yukarıdaki GERÇEK VERİ bölümlerinde yazanları kullan; UYDURMA. "
+        "(2) Google Takvim bağlı değilse bunu açıkça söyle: 'Google Takvim henüz bağlı değil, yerel takvim verisiyle devam ediyorum.' "
+        "(3) Komagene rutinini yalnızca GOOGLE WORKSPACE GERÇEK VERİ bölümünde varsa aktar. "
+        "(4) Takvim etkinliklerini saat ve isimle TAM olduğu gibi söyle; yoksa 'takvimde sabit program yok' de. "
+        "(5) 3-5 cümle, akıcı paragraf. 'Günaydın Bora Bey' ile başla. Robotik liste değil."
     )
     try:
         client = LlmChat(
             api_key=EMERGENT_LLM_KEY,
-            session_id=f'{user["id"]}:briefing-{today_str}',
+            session_id=f'{user["id"]}:briefing-{today_str}-{int(today.timestamp())}',
             system_message=system_prompt
-        ).with_model("openai", "gpt-4o-mini").with_params(temperature=0.4, max_tokens=400)
+        ).with_model("openai", "gpt-4o-mini").with_params(temperature=0.3, max_tokens=400)
         text = await client.send_message(UserMessage(text=prompt))
     except Exception as e:
         logger.exception("Briefing error")
-        text = f"Günaydın Bora Bey. Bugün için bilgi alınamadı: {str(e)}"
+        text = f"Günaydın Bora Bey. Brifing üretilemedi: {str(e)[:100]}"
 
     return {
         "text": text,
-        "events": events,
+        "events": local_events,
+        "google_events": google_events,
+        "google_connected": google_connected,
+        "google_configured": gint.is_configured(),
         "priorities": priorities,
         "pending_count": len([t for t in tasks if not t.get("is_priority")]),
         "date": today.strftime("%d %B %Y, %A"),
@@ -474,6 +567,7 @@ async def root():
 
 
 app.include_router(api)
+app.include_router(gint.create_router(db, current_user))
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

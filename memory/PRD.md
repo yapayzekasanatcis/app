@@ -31,11 +31,22 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Floating NOVA orb (idle/listening/thinking/speaking states) + Push-to-talk + Chat panel
 - 20/20 backend tests passed
 
+## Google Workspace Integration Update (2026-10-08)
+- Google OAuth modülünün ortam değişkenlerinden önce yüklenmesi nedeniyle oluşan yapılandırma hatası kod seviyesinde düzeltildi.
+- Salt-okunur Calendar, Drive, Sheets ve Docs kapsamları; şifreli refresh token saklama; 10 dakikalık OAuth state süresi ve birebir callback URI kullanımı eklendi.
+- `NOVA ASİSTAN — Özel Takvim` için tarih bazlı okuma ve 8 Ekim 2026 doğrulaması eklendi; adı geçen takvim yoksa birincil takvime sessiz fallback kaldırıldı.
+- `NOVA İş Merkezi` ve İşler/Projeler/Rutinler sekmeleri için gerçek okuma doğrulama endpoint'i ve Ayarlar sonuç ekranı eklendi.
+- Günlük brifing ve Bugün ekranındaki kodla üretilen Komagene/özel gün rutinleri kaldırıldı; rutinler yalnızca gerçek Sheets/Docs verisinden okunuyor.
+- Backend regresyon testleri seri çalışmada 20/20 geçti; frontend üretim derlemesi geçti; masaüstü ve 390px mobil görünümde yatay taşma yok.
+- P0 blokajı: Çalışan preview ortamı `GOOGLE_CLIENT_SECRET` değerini Client ID ile aynı görüyor. Bu nedenle OAuth bilinçli olarak başlatılmıyor; gerçek Google consent/token ve veri testi henüz tamamlanmadı.
+
 ## Backlog (next phases)
 ### P0
-- Google Calendar entegrasyonu (okuma + yazma)
-- Google Sheets ("NOVA İş Merkezi" okuma)
-- Google Drive ("NOVA ASİSTAN" belgeleri okuma)
+- Preview çalışma ortamına doğru `GOOGLE_CLIENT_SECRET` değerinin yansımasını sağla.
+- Kullanıcının Ayarlar > Google'ı Bağla akışında consent vermesini tamamla.
+- Gerçek veri doğrulamasında 8 Ekim 2026 20:00 Bursa Bölge Devlet Senfoni Orkestrası etkinliğini doğrula.
+- `NOVA İş Merkezi` İşler / Projeler / Rutinler sekmelerinin gerçek satır sayılarını doğrula.
+- Google Drive/Docs (`NOVA ASİSTAN` klasörü ve çekirdek doküman) gerçek okuma testi.
 - Gmail entegrasyonu
 
 ### P1
