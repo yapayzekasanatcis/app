@@ -21,6 +21,7 @@ if not BASE_URL:
                 break
 
 TEST_USER_ID = "TEST_bora"
+ALLOWED_USER_EMAIL = os.environ["ALLOWED_USER_EMAIL"]
 
 
 @pytest.fixture(scope="session")
@@ -41,7 +42,7 @@ def test_session_cookie(mongo_db):
         {"id": TEST_USER_ID},
         {"$set": {
             "id": TEST_USER_ID,
-            "email": "test_bora@example.com",
+            "email": ALLOWED_USER_EMAIL,
             "name": "Bora Test",
             "picture": None,
             "updated_at": datetime.now(timezone.utc).isoformat(),

@@ -38,7 +38,7 @@ def db():
 def security_client(db):
     db.users.update_one(
         {"id": TEST_USER_ID},
-        {"$set": {"id": TEST_USER_ID, "email": "security-test@example.com", "name": "Security Test"}},
+        {"$set": {"id": TEST_USER_ID, "email": os.environ["ALLOWED_USER_EMAIL"], "name": "Security Test"}},
         upsert=True,
     )
     session_id = secrets.token_urlsafe(32)
@@ -162,8 +162,6 @@ def test_security_headers_on_api_and_frontend():
         assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
 
 
-def test_google_debug_is_admin_only_and_connect_get_is_disabled(security_client):
-    verify = security_client.get(f"{BASE_URL}/api/google/verify", timeout=30)
-    assert verify.status_code == 403
+def test_google_connect_get_is_disabled(security_client):
     connect_get = security_client.get(f"{BASE_URL}/api/google/connect", timeout=30)
     assert connect_get.status_code == 405

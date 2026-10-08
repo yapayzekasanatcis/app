@@ -5,7 +5,7 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 
 ## Architecture
 - **Backend**: FastAPI + MongoDB (motor async) + Emergent Universal LLM Key
-- **Auth**: Emergent-managed Google OAuth (session cookie `nova_session`, HttpOnly, signed with itsdangerous)
+- **Auth**: Emergent-managed Google OAuth + backend tek kullanıcı allowlist (`yapayzekasanatcisi@gmail.com`); session cookie `nova_session`, HttpOnly, signed with itsdangerous
 - **LLM**: `emergentintegrations.llm.chat.LlmChat` → OpenAI gpt-4o-mini
 - **Voice**: OpenAI Whisper (STT) + OpenAI gpt-4o-mini-tts (TTS) via Emergent proxy
 - **Frontend**: React 19 + React Router + Framer Motion + Shadcn UI + Tailwind
@@ -24,6 +24,7 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 7. Önemli tarih hatırlatıcıları (Tuğba 10 Kasım, Komagene %50 Çiğköfte 15'i, aile)
 8. Low cost (<1500 TL/ay)
 9. Güvenlik: onaysız ödeme/rezervasyon/mail gönderme/etkinlik silme YOK
+10. Production uygulama içeriği ve tüm private/ücretli API'ler yalnız `yapayzekasanatcisi@gmail.com` hesabına açık
 
 ## Implemented (2026-02-08)
 - Backend: Auth (session/me/logout), Chat, Chat History, Briefing/today, Tasks CRUD, Notes CRUD, Events CRUD, STT, TTS
@@ -114,6 +115,16 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Zorunlu testing agent: security 9/9, full + bağımsız kontroller toplam 62/62; browser CSRF negative/positive, cookie, CORS, redaksiyon, rate limit, headers ve production build geçti (`iteration_12.json`).
 - Security Audit re-run verdict: `PASS — NO MATERIAL FUNCTIONAL ISSUES FOUND`; güvenlik açısından READY.
 - P3 bakım: çok-worker ortamında distributed rate-limit store; production CSP unsafe-inline azaltma; production ingress CORS davranışını yayın sonrası runtime doğrulama.
+
+## Single-User Production Authorization Lock (2026-10-08)
+- Emergent-managed Google session exchange artık backend'de normalize edilmiş ve doğrulanmış email kimliğini kontrol ediyor; yalnız `yapayzekasanatcisi@gmail.com` kabul ediliyor.
+- Farklı hesaplar local user/session/cookie veya Google token kaydı oluşmadan HTTP 403 ile durduruluyor.
+- Yetkisiz yanıt metni ürün genelinde sabitlendi: `NOVA, Yapay Zeka Sanatçısı Bora ÜNSAL’a özel kişisel asistandır. Yetkisiz erişim reddedildi.`
+- Merkezi `current_user` authorization katmanı eski yetkisiz signed sessionları 403 ile reddedip session kaydını siliyor; Chat, TTS, STT, Workspace snapshot, Calendar, Sheets, Drive ve Docs provider/model çağrısından önce duruyor.
+- Google Workspace OAuth callback, state'e bağlı kullanıcı allowlist dışında ise token exchange ve storage başlamadan 403 dönüyor.
+- Login ekranı backend 403 detayını `login-access-denied-alert` içinde masaüstü ve mobilde gösteriyor; yatay taşma yok.
+- Mevcut `google_tokens` sahipliği doğrulandı: tek token owner izinli hesaba bağlı; token değerleri okunmadı, yazdırılmadı veya değiştirilmedi.
+- Hedefli auth + güvenlik regresyonu bağımsız doğrulamada 21/21 geçti; frontend production build başarılı (`iteration_14.json`). Son self-test 5/5 geçti ve geçici auth test kayıtları temizlendi.
 
 ## Backlog (next phases)
 ### P0

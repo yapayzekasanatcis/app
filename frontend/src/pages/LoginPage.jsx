@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -10,6 +10,7 @@ export default function LoginPage() {
   const { user, loading, refresh } = useAuth();
   const navigate = useNavigate();
   const once = useRef(false);
+  const [authError, setAuthError] = useState("");
 
   useEffect(() => {
     // Handle fragment from Emergent Auth callback: #session_id=XXX
@@ -21,7 +22,12 @@ export default function LoginPage() {
       if (sid) {
         authApi.session(sid)
           .then(() => { toast.success("Hoş geldin Bora"); refresh(); navigate("/", { replace: true }); })
-          .catch(() => toast.error("Giriş başarısız"));
+          .catch((error) => {
+            const message = error?.response?.data?.detail || "Giriş başarısız";
+            setAuthError(message);
+            toast.error(message);
+            window.history.replaceState(null, "", window.location.pathname);
+          });
       }
     }
   }, [navigate, refresh]);
@@ -31,6 +37,8 @@ export default function LoginPage() {
   }, [loading, user, navigate]);
 
   const login = () => {
+    setAuthError("");
+    // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
     const redirect = `${window.location.origin}/giris`;
     window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirect)}`;
   };
@@ -58,6 +66,17 @@ export default function LoginPage() {
             Bora'nın kişisel özel sekreteri. Takvim, iş, seyahat ve günlük yaşam tek merkezden koordine edilir.
           </p>
         </div>
+
+        {authError && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-testid="login-access-denied-alert"
+            className="w-full border border-red-400/35 bg-red-950/35 px-4 py-3 text-center text-sm leading-relaxed text-red-100"
+          >
+            {authError}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center gap-2 text-[color:var(--nova-text-2)]"><Loader2 className="h-4 w-4 animate-spin" /> Hazırlanıyor…</div>

@@ -16,6 +16,8 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+from auth_policy import require_allowed_identity
+
 logger = logging.getLogger("nova.google")
 
 GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
@@ -455,6 +457,11 @@ def create_router(db, current_user):
             await db.google_oauth_states.delete_one({"state": state_q})
             raise HTTPException(400, "OAuth isteğinin süresi doldu")
         await db.google_oauth_states.delete_one({"state": state_q})
+
+        state_user = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not state_user:
+            raise HTTPException(401, "Kullanıcı bulunamadı")
+        require_allowed_identity(state_user)
 
         code_verifier = unseal(state_doc.get("code_verifier"))
         if not code_verifier:

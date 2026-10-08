@@ -40,7 +40,7 @@ def db():
 def auth_csrf_client(db):
     db.users.update_one(
         {"id": TEST_USER_ID},
-        {"$set": {"id": TEST_USER_ID, "email": "security-runtime@example.com", "name": "Security Runtime"}},
+        {"$set": {"id": TEST_USER_ID, "email": os.environ["ALLOWED_USER_EMAIL"], "name": "Security Runtime"}},
         upsert=True,
     )
     session_id = secrets.token_urlsafe(32)
@@ -61,6 +61,7 @@ def auth_csrf_client(db):
     client.headers.update({"X-CSRF-Token": csrf.json()["csrf_token"]})
     yield client
     db.notes.delete_many({"user_id": TEST_USER_ID})
+    db.google_oauth_states.delete_many({"user_id": TEST_USER_ID})
     db.sessions.delete_one({"session_id": session_id})
     db.users.delete_one({"id": TEST_USER_ID})
 

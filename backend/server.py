@@ -25,6 +25,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import google_integration as gint
+from auth_policy import require_allowed_identity
 from assistant_context import build_chat_package
 from workspace_data import build_workspace_snapshot
 from security import BrowserSecurityMiddleware, configured_origins, csrf_token_for_request
@@ -167,6 +168,11 @@ async def current_user(request: Request) -> dict:
     user = await db.users.find_one({"id": sess["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(401, "Kullanıcı bulunamadı")
+    try:
+        require_allowed_identity(user)
+    except HTTPException:
+        await db.sessions.delete_one({"session_id": sid})
+        raise
     return user
 
 
@@ -183,10 +189,12 @@ async def auth_session(payload: SessionExchange, response: Response):
         raise HTTPException(401, "Google oturumu doğrulanamadı")
     data = r.json()
 
+    email = require_allowed_identity(data)
     user_id = data.get("id") or data.get("email")
     user_doc = {
         "id": user_id,
-        "email": data.get("email"),
+        "email": email,
+        "email_verified": True,
         "name": data.get("name"),
         "picture": data.get("picture"),
         "updated_at": now_iso(),

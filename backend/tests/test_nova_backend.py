@@ -1,5 +1,6 @@
 """Backend tests for NOVA ASİSTAN API."""
 import io
+import os
 import pytest
 
 
@@ -39,7 +40,7 @@ def test_auth_me_with_cookie(auth_client, base_url):
     assert r.status_code == 200
     data = r.json()
     assert data["id"] == "TEST_bora"
-    assert data["email"] == "test_bora@example.com"
+    assert data["email"] == os.environ["ALLOWED_USER_EMAIL"]
     assert data["name"] == "Bora Test"
 
 
@@ -222,7 +223,7 @@ def test_logout_clears_session(base_url, mongo_db):
     sid = _s.token_urlsafe(32)
     mongo_db.users.update_one(
         {"id": "TEST_bora_logout"},
-        {"$set": {"id": "TEST_bora_logout", "email": "lo@test.com", "name": "LO"}},
+        {"$set": {"id": "TEST_bora_logout", "email": os.environ["ALLOWED_USER_EMAIL"], "name": "LO"}},
         upsert=True,
     )
     mongo_db.sessions.insert_one({"session_id": sid, "user_id": "TEST_bora_logout", "created_at": datetime.now(timezone.utc).isoformat()})
