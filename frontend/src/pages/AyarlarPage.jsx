@@ -147,6 +147,21 @@ export default function AyarlarPage() {
                 {Object.entries(verification.sheets.tabs).map(([name, tab]) => `${name}: ${tab.row_count} satır`).join(" · ")}
               </div>
             </div>
+            <div className="border border-white/10 bg-white/[0.03] p-4 rounded-lg" data-testid="google-drive-verification-result">
+              <div className="font-medium text-[color:var(--nova-text)]">NOVA ASİSTAN Klasörü</div>
+              <div className="mt-1 text-sm text-emerald-400" data-testid="google-drive-folder-verification-status">
+                Erişim başarılı · {verification.drive.file_count} dosya
+              </div>
+            </div>
+            <div className="border border-white/10 bg-white/[0.03] p-4 rounded-lg" data-testid="google-docs-verification-result">
+              <div className="font-medium text-[color:var(--nova-text)]">Çekirdek Kurallar ve Rutinler</div>
+              <div className="mt-1 text-sm text-emerald-400" data-testid="google-docs-content-verification-status">
+                İçerik okundu
+              </div>
+              <div className="mt-2 text-xs text-[color:var(--nova-text-2)]" data-testid="google-docs-headings">
+                {verification.docs.headings.slice(0, 4).join(" · ")}
+              </div>
+            </div>
           </div>
         )}
 

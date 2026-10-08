@@ -170,6 +170,19 @@
 /* Selection */
 ::selection { background: rgba(245, 158, 11, 0.4); color: #F4F1EA; }
 
+@media (max-width: 639px) {
+  [data-sonner-toaster] {
+    width: calc(100vw - 1.5rem) !important;
+    max-width: calc(100vw - 1.5rem) !important;
+    right: 0.75rem !important;
+    left: 0.75rem !important;
+  }
+  [data-sonner-toast] {
+    max-width: 100% !important;
+    overflow-wrap: anywhere;
+  }
+}
+
 @layer base {
   [data-debug-wrapper="true"] { display: contents !important; }
 }

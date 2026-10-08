@@ -44,10 +44,13 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Gerçek Calendar doğrulaması geçti: `NOVA ASİSTAN — Özel Takvim`, 8 Ekim 2026 20:00–22:00, `Sezon Açılış Konseri — Bursa Bölge Devlet Senfoni Orkestrası`, Merinos AKKM Osmangazi Salonu.
 - Gerçek Sheets doğrulaması geçti: `NOVA İş Merkezi` içinde İşler 4, Projeler 6, Rutinler 15 satır okunabildi.
 - Bağımsız kritik retest: backend 4/4 ve Ayarlar Google doğrulama akışı %100 geçti (`iteration_2.json`).
+- Gerçek Drive doğrulaması geçti: `NOVA ASİSTAN` klasörüne erişildi; klasörde çekirdek doküman ve `NOVA İş Merkezi` dosyası görüldü.
+- Gerçek Docs doğrulaması geçti: `NOVA ASİSTAN — Çekirdek Kurallar ve Rutinler` belgesinden içerik ve başlıklar okundu (`AMAÇ`, `TEMEL DAVRANIŞ`, `ANA ALANLAR`, `SABİT RUTİNLER`).
+- Ayarlar > Gerçek Veriyi Doğrula ekranı Calendar, Sheets, Drive ve Docs sonuçlarını gösteriyor; mobil bildirim taşması düzeltildi.
+- Bağımsız Drive/Docs retest: backend 7/7 ve masaüstü/mobil Ayarlar akışı %100 geçti (`iteration_3.json`), mocked API yok.
 
 ## Backlog (next phases)
 ### P0
-- Google Drive/Docs (`NOVA ASİSTAN` klasörü ve çekirdek doküman) gerçek okuma testi.
 - Gmail entegrasyonu
 
 ### P1

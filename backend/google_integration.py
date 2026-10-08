@@ -17,11 +17,11 @@ from googleapiclient.errors import HttpError
 
 logger = logging.getLogger("nova.google")
 
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
-GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "")
-TOKEN_ENCRYPTION_KEY = os.environ.get("TOKEN_ENCRYPTION_KEY", "")
+GOOGLE_CLIENT_ID = os.environ["GOOGLE_CLIENT_ID"]
+GOOGLE_CLIENT_SECRET = os.environ["GOOGLE_CLIENT_SECRET"]
+GOOGLE_REDIRECT_URI = os.environ["GOOGLE_REDIRECT_URI"]
+FRONTEND_URL = os.environ["FRONTEND_URL"]
+TOKEN_ENCRYPTION_KEY = os.environ["TOKEN_ENCRYPTION_KEY"]
 
 fernet = Fernet(TOKEN_ENCRYPTION_KEY.encode()) if TOKEN_ENCRYPTION_KEY else None
 
@@ -189,10 +189,17 @@ def _drive_literal(value: str) -> str:
     return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
 
 
-def _find_drive_file(drive, name: str, mime: Optional[str] = None):
+def _find_drive_file(
+    drive,
+    name: str,
+    mime: Optional[str] = None,
+    parent_id: Optional[str] = None,
+):
     q = f'name = {_drive_literal(name)} and trashed = false'
     if mime:
         q += f' and mimeType = {_drive_literal(mime)}'
+    if parent_id:
+        q += f' and {_drive_literal(parent_id)} in parents'
     r = _http(drive.files().list(
         q=q, spaces="drive",
         fields="files(id,name,mimeType,modifiedTime,webViewLink)",
@@ -307,13 +314,22 @@ async def get_core_doc_text(db, user_id: str):
     creds = await credentials_for(db, user_id)
     drive = _service("drive", "v3", creds)
     docs = _service("docs", "v1", creds)
-    files = _find_drive_file(drive, DOC_NAME, "application/vnd.google-apps.document")
+    folders = _find_drive_file(drive, DRIVE_FOLDER_NAME, "application/vnd.google-apps.folder")
+    if not folders:
+        return None
+    files = _find_drive_file(
+        drive,
+        DOC_NAME,
+        "application/vnd.google-apps.document",
+        parent_id=folders[0]["id"],
+    )
     if not files:
         return None
     d = _http(docs.documents().get(documentId=files[0]["id"]))
     # Extract plain text
     body = d.get("body", {}).get("content", [])
     lines = []
+    headings = []
     for el in body:
         p = el.get("paragraph")
         if not p:
@@ -323,9 +339,24 @@ async def get_core_doc_text(db, user_id: str):
             tr = e.get("textRun")
             if tr:
                 text += tr.get("content", "")
-        if text.strip():
+        clean_text = text.strip()
+        if clean_text:
             lines.append(text.rstrip("\n"))
-    return {"id": files[0]["id"], "name": files[0]["name"], "text": "\n".join(lines), "link": files[0].get("webViewLink")}
+            style = p.get("paragraphStyle", {}).get("namedStyleType", "")
+            looks_like_heading = (
+                style == "TITLE"
+                or style.startswith("HEADING_")
+                or (len(clean_text) <= 120 and clean_text == clean_text.upper())
+            )
+            if looks_like_heading:
+                headings.append(clean_text)
+    return {
+        "id": files[0]["id"],
+        "name": files[0]["name"],
+        "text": "\n".join(lines),
+        "headings": headings,
+        "link": files[0].get("webViewLink"),
+    }
 
 
 # ---------- Router ----------
@@ -490,6 +521,12 @@ def create_router(db, current_user):
         sheet = await get_sheet_data(db, user["id"])
         if sheet is None:
             raise HTTPException(404, f"'{SHEET_NAME}' tablosu bulunamadı")
+        drive_data = await get_drive_folder_files(db, user["id"])
+        if drive_data is None:
+            raise HTTPException(404, f"'{DRIVE_FOLDER_NAME}' klasörü bulunamadı")
+        doc_data = await get_core_doc_text(db, user["id"])
+        if doc_data is None:
+            raise HTTPException(404, f"'{DOC_NAME}' dokümanı bulunamadı")
         return {
             "calendar": {
                 "name": CALENDAR_NAME,
@@ -504,6 +541,19 @@ def create_router(db, current_user):
                     tab: {"readable": True, "row_count": len(sheet.get(tab, []))}
                     for tab in ("İşler", "Projeler", "Rutinler")
                 },
+            },
+            "drive": {
+                "name": drive_data["folder"]["name"],
+                "folder_found": True,
+                "file_count": len(drive_data["files"]),
+                "files": [item.get("name") for item in drive_data["files"]],
+            },
+            "docs": {
+                "name": doc_data["name"],
+                "document_found": True,
+                "content_readable": bool(doc_data["text"].strip()),
+                "content_length": len(doc_data["text"]),
+                "headings": doc_data["headings"][:8],
             },
         }
 

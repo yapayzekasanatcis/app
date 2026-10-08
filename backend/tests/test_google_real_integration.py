@@ -1,4 +1,4 @@
-"""Real Google integration tests for NOVA ASİSTAN (calendar + sheets + log redaction)."""
+"""Real Google integration tests for NOVA ASİSTAN (calendar/sheets/drive/docs + log redaction)."""
 import os
 import secrets
 import sys
@@ -26,6 +26,13 @@ TARGET_EMAIL = "yapayzekasanatcisi@gmail.com"
 CALENDAR_NAME = "NOVA ASİSTAN — Özel Takvim"
 EXPECTED_TITLE = "Sezon Açılış Konseri — Bursa Bölge Devlet Senfoni Orkestrası"
 EXPECTED_LOCATION = "Merinos AKKM Osmangazi Salonu"
+DRIVE_FOLDER_NAME = "NOVA ASİSTAN"
+DOC_NAME = "NOVA ASİSTAN — Çekirdek Kurallar ve Rutinler"
+REQUIRED_DOC_HEADINGS = [
+    "NOVA ASİSTAN — ÇEKİRDEK KURALLAR VE RUTİNLER",
+    "AMAÇ",
+    "TEMEL DAVRANIŞ",
+]
 
 
 @pytest.fixture(scope="session")
@@ -120,6 +127,60 @@ def test_google_verify_event_and_sheets_tabs(auth_client):
         tab_data = data["sheets"]["tabs"][tab_name]
         assert tab_data["readable"] is True
         assert isinstance(tab_data["row_count"], int)
+
+
+# ---------- Google drive ----------
+def test_google_drive_folder_and_core_doc_file_visible(auth_client):
+    r = auth_client.get(f"{BASE_URL}/api/google/drive", timeout=45)
+    assert r.status_code == 200, r.text
+    data = r.json()
+
+    folder = data["folder"]
+    assert folder["name"] == DRIVE_FOLDER_NAME
+    assert isinstance(folder.get("id"), str) and len(folder["id"]) > 5
+
+    files = data.get("files")
+    assert isinstance(files, list)
+    assert any((f.get("name") or "") == DOC_NAME for f in files), f"Drive files: {[f.get('name') for f in files]}"
+
+
+# ---------- Google docs ----------
+def test_google_doc_reads_real_text_and_required_headings(auth_client):
+    r = auth_client.get(f"{BASE_URL}/api/google/doc", timeout=45)
+    assert r.status_code == 200, r.text
+    data = r.json()
+
+    assert data["name"] == DOC_NAME
+    assert isinstance(data.get("text"), str)
+    assert len(data["text"].strip()) > 0
+
+    headings = data.get("headings")
+    assert isinstance(headings, list)
+    heading_set = {h.strip() for h in headings if isinstance(h, str)}
+    for required in REQUIRED_DOC_HEADINGS:
+        assert required in heading_set, f"Missing heading '{required}' in {headings}"
+
+
+def test_google_verify_includes_drive_docs_flags_and_required_headings(auth_client):
+    r = auth_client.get(f"{BASE_URL}/api/google/verify", timeout=60)
+    assert r.status_code == 200, r.text
+    data = r.json()
+
+    assert data["drive"]["name"] == DRIVE_FOLDER_NAME
+    assert data["drive"]["folder_found"] is True
+    assert isinstance(data["drive"].get("file_count"), int)
+    assert DOC_NAME in data["drive"].get("files", [])
+
+    assert data["docs"]["name"] == DOC_NAME
+    assert data["docs"]["document_found"] is True
+    assert data["docs"]["content_readable"] is True
+    assert isinstance(data["docs"].get("content_length"), int)
+    assert data["docs"]["content_length"] > 0
+
+    verify_headings = data["docs"].get("headings", [])
+    assert isinstance(verify_headings, list)
+    for required in REQUIRED_DOC_HEADINGS:
+        assert required in verify_headings, f"Missing verify heading '{required}' in {verify_headings}"
 
 
 # ---------- OAuth callback access-log redaction ----------
