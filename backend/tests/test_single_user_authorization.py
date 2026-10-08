@@ -13,6 +13,7 @@ import httpx
 import pytest
 import requests
 from dotenv import load_dotenv
+from fastapi import FastAPI
 from fastapi import Response
 from itsdangerous import URLSafeTimedSerializer
 from pymongo import MongoClient
@@ -23,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import google_integration as gint
 import server
+from auth_middleware import SingleUserAuthorizationMiddleware
 from auth_policy import ALLOWED_USER_EMAIL, UNAUTHORIZED_MESSAGE
 
 
@@ -85,6 +87,66 @@ class _FakeDb:
         self.sessions = _FakeCollection()
 
 
+class _StartupFakeCursor:
+    def __init__(self, rows):
+        self.rows = rows
+
+    async def to_list(self, _limit):
+        return [dict(row) for row in self.rows]
+
+
+def _doc_matches_query(doc, query):
+    if not query:
+        return True
+
+    if "$or" in query:
+        return any(_doc_matches_query(doc, clause) for clause in query["$or"])
+
+    for key, value in query.items():
+        if key == "$or":
+            continue
+        doc_value = doc.get(key)
+        if isinstance(value, dict):
+            if "$ne" in value and doc_value == value["$ne"]:
+                return False
+            if "$nin" in value and doc_value in value["$nin"]:
+                return False
+            if "$in" in value and doc_value not in value["$in"]:
+                return False
+        elif doc_value != value:
+            return False
+    return True
+
+
+class _StartupFakeCollection:
+    def __init__(self, rows=None):
+        self.rows = list(rows or [])
+
+    def find(self, query=None, projection=None):
+        matched = [row for row in self.rows if _doc_matches_query(row, query or {})]
+        if projection:
+            include_keys = [key for key, include in projection.items() if include and key != "_id"]
+            matched = [{key: row.get(key) for key in include_keys} for row in matched]
+        return _StartupFakeCursor(matched)
+
+    async def delete_many(self, query):
+        before = len(self.rows)
+        self.rows = [row for row in self.rows if not _doc_matches_query(row, query)]
+
+        class _Result:
+            deleted_count = before - len(self.rows)
+
+        return _Result()
+
+
+class _StartupFakeDb:
+    def __init__(self, users, sessions, google_tokens, google_oauth_states):
+        self.users = _StartupFakeCollection(users)
+        self.sessions = _StartupFakeCollection(sessions)
+        self.google_tokens = _StartupFakeCollection(google_tokens)
+        self.google_oauth_states = _StartupFakeCollection(google_oauth_states)
+
+
 def test_allowed_google_account_completes_local_session(monkeypatch):
     fake_db = _FakeDb()
     payload = {
@@ -109,6 +171,7 @@ def test_allowed_google_account_completes_local_session(monkeypatch):
     signed = cookie["nova_session"].value
     session_id = URLSafeTimedSerializer(os.environ["SESSION_SECRET"]).loads(signed)
     assert session_id == fake_db.sessions.rows[0]["session_id"]
+    assert server.AUTH_SESSION_VERSION == 2
 
 
 @pytest.mark.parametrize(
@@ -289,3 +352,71 @@ def test_google_callback_blocks_non_allowlisted_state_user_before_token_exchange
         db.google_tokens.delete_many({"user_id": user_id})
         db.users.delete_one({"id": user_id})
         mongo.close()
+
+
+def test_startup_enforcement_cleans_unauthorized_records_and_keeps_allowed_token(monkeypatch):
+    allowed_user_id = "allowed-user-id"
+    unauthorized_user_id = "unauthorized-user-id"
+    fake_db = _StartupFakeDb(
+        users=[
+            {"id": allowed_user_id, "email": ALLOWED_USER_EMAIL},
+            {"id": unauthorized_user_id, "email": "intruder@example.com"},
+        ],
+        sessions=[
+            {"session_id": "allowed-v2", "user_id": allowed_user_id, "auth_version": 2},
+            {"session_id": "allowed-v1", "user_id": allowed_user_id, "auth_version": 1},
+            {"session_id": "intruder-v2", "user_id": unauthorized_user_id, "auth_version": 2},
+        ],
+        google_tokens=[
+            {"user_id": allowed_user_id, "refresh_token": "allowed"},
+            {"user_id": unauthorized_user_id, "refresh_token": "intruder"},
+        ],
+        google_oauth_states=[{"state": "stale-state"}],
+    )
+    monkeypatch.setattr(server, "db", fake_db)
+
+    asyncio.run(server.enforce_single_user_store())
+
+    assert fake_db.users.rows == [{"id": allowed_user_id, "email": ALLOWED_USER_EMAIL}]
+    assert fake_db.sessions.rows == [{"session_id": "allowed-v2", "user_id": allowed_user_id, "auth_version": 2}]
+    assert fake_db.google_tokens.rows == [{"user_id": allowed_user_id, "refresh_token": "allowed"}]
+    assert fake_db.google_oauth_states.rows == []
+
+
+def test_single_user_middleware_skips_public_paths_and_loads_private_user():
+    load_calls = []
+
+    async def fake_loader(request):
+        load_calls.append(request.url.path)
+        return {"id": "allowed-user", "email": ALLOWED_USER_EMAIL}
+
+    app = FastAPI()
+    app.add_middleware(SingleUserAuthorizationMiddleware, current_user_loader=fake_loader)
+
+    @app.get("/api/")
+    async def api_root():
+        return {"ok": True}
+
+    @app.post("/api/auth/session")
+    async def auth_session_public():
+        return {"ok": True}
+
+    @app.post("/api/chat")
+    async def private_chat():
+        return {"ok": True}
+
+    async def exercise():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="https://testserver") as client:
+            root_response = await client.get("/api/")
+            session_response = await client.post("/api/auth/session")
+            private_response = await client.post("/api/chat")
+            assert root_response.status_code == 200
+            assert session_response.status_code == 200
+            assert private_response.status_code == 200
+
+    asyncio.run(exercise())
+
+    assert "/api/" not in load_calls
+    assert "/api/auth/session" not in load_calls
+    assert "/api/chat" in load_calls
