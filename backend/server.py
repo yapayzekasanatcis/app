@@ -17,7 +17,6 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, ConfigDict
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
-from emergentintegrations.llm.chat import LlmChat, UserMessage
 from openai import AsyncOpenAI
 from zoneinfo import ZoneInfo
 
@@ -28,6 +27,8 @@ import google_integration as gint
 from auth_middleware import SingleUserAuthorizationMiddleware
 from auth_policy import ALLOWED_USER_EMAIL, AUTH_SESSION_VERSION, require_allowed_identity
 from assistant_context import build_chat_package
+from conversation_context import save_conversation_context
+from intelligence_models import answer_general_knowledge, answer_live_web
 from workspace_data import build_workspace_snapshot
 from security import BrowserSecurityMiddleware, configured_origins, csrf_token_for_request
 
@@ -392,32 +393,66 @@ async def _google_workspace_summary_for_prompt(user: dict) -> str:
     return "\n\n".join(sections)
 
 
+def _data_source_label(package: dict) -> str:
+    intent = package.get("intent", "general")
+    labels = {
+        "personal_memory": "Personal Memory",
+        "unknown_fallback": "Unknown Fallback",
+        "conversation_context": "Conversation Context",
+        "general": "General LLM",
+        "briefing": "Calendar + Workspace",
+        "today_schedule": "Calendar + Workspace",
+        "calendar_date_query": "Calendar",
+        "pending_tasks": "Workspace",
+        "weekly_priorities": "Calendar + Workspace Priority Engine",
+        "weekly_routines": "Workspace Routines",
+        "week_overview": "Calendar + Workspace",
+    }
+    if intent == "web_search":
+        return "Calendar + Web Search" if package.get("web_context") else "Web Search"
+    if intent == "travel_search":
+        return "Calendar/Workspace + Web Search + Travel Profile" if package.get("web_context") else "Web Search + Travel Profile"
+    return labels.get(intent, "General LLM")
+
+
 @api.post("/chat")
 async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
     try:
-        package = await build_chat_package(db, user["id"], body.message)
+        package = await build_chat_package(
+            db,
+            user["id"],
+            body.message,
+            conversation_id=body.conversation_id,
+        )
     except Exception as exc:
         logger.error("Real-time conversation context failed type=%s", type(exc).__name__)
         package = {
+            "intent": "general",
             "calendar_summary": "GOOGLE_TAKVIM_HATASI",
             "workspace_summary": "GOOGLE_WORKSPACE_HATASI",
             "reply": None,
+            "prior_context": "",
+            "web_context": "",
+            "events": [],
         }
-    system_prompt = await build_system_prompt(
-        user,
-        package["calendar_summary"],
-        package["workspace_summary"],
-    )
     session_id = f'{user["id"]}:{body.conversation_id}'
     answer = package.get("reply")
+    sources = []
     if not answer:
         try:
-            client = LlmChat(
-                api_key=EMERGENT_LLM_KEY,
-                session_id=session_id,
-                system_message=system_prompt
-            ).with_model("openai", "gpt-4o-mini").with_params(temperature=0.25, max_tokens=800)
-            answer = await client.send_message(UserMessage(text=body.message))
+            if package.get("intent") in {"web_search", "travel_search"}:
+                answer, sources = await answer_live_web(
+                    body.message,
+                    session_id,
+                    workspace_context=package.get("web_context", ""),
+                    prior_context=package.get("prior_context", ""),
+                )
+            else:
+                answer = await answer_general_knowledge(
+                    body.message,
+                    session_id,
+                    prior_context=package.get("prior_context", ""),
+                )
         except Exception as exc:
             logger.error("Chat provider error type=%s", type(exc).__name__)
             raise HTTPException(500, "NOVA şu anda yanıt veremiyor")
@@ -437,10 +472,26 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
         "role": "assistant",
         "content": answer,
         "source": body.source,
+        "sources": sources,
         "created_at": now_iso(),
     })
 
-    return {"answer": answer, "intent": package.get("intent", "general"), "source": body.source}
+    await save_conversation_context(
+        db,
+        user["id"],
+        body.conversation_id,
+        body.message,
+        answer,
+        package,
+    )
+
+    return {
+        "answer": answer,
+        "intent": package.get("intent", "general"),
+        "data_source": _data_source_label(package),
+        "sources": sources,
+        "source": body.source,
+    }
 
 
 @api.get("/chat/history")

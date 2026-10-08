@@ -1,0 +1,54 @@
+{
+  "summary": "NOVA Core Intelligence V2 için istenen backend+frontend doğrulaması tamamlandı. Unit router/memory suite geçti; real acceptance suite tek çalıştırmada 21 testin 19'u geçti, 2 testte live web travel sorgularında sources boş döndü.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "/api/chat",
+        "issue": "travel_search akışında (17 Ekim Alanya ulaşım, İstanbul gece dönüş rota) yanıt 200 dönse de data.sources boş geliyor; acceptance contract ihlali.",
+        "priority": "HIGH/CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "/app/backend/tests/test_core_intelligence_v2.py",
+        "issue": "Test dosyasında import path eksikti (assistant_context bulunamadı); test altyapısı için sys.path düzeltildi."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_core_intelligence_v2.py",
+    "/app/backend/tests/test_intent_classification.py",
+    "/app/backend/tests/test_core_intelligence_v2_real.py",
+    "/app/test_reports/pytest/pytest_results_iteration_16_unit.xml",
+    "/app/test_reports/pytest/pytest_results_iteration_16_real.xml",
+    "/root/.emergent/automation_output/20261008_214146/console_20261008_214146.log"
+  ],
+  "action_items": [
+    "Gemini Google Search yanıtından citation/sources parse akışını güçlendirin; data.sources boş kaldığında travel_search contract'ını bozuyor.",
+    "İyileştirme sonrası sadece /app/backend/tests/test_core_intelligence_v2_real.py içindeki test_17 ve test_18 hedefli retest edin (ücretli suite tekrarını minimize edin).",
+    "Canlı web fallback metni yerine kaynak üreten yolun kararlı çalıştığını backend log + response payload ile doğrulayın."
+  ],
+  "critical_code_review_comments": [
+    "Kritik RCA: intelligence_models.answer_live_web içinde _annotation_sources() yalnız belirli raw annotation/grounding formatlarını yakalıyor; provider cevabı farklı şemada geldiğinde sources=[] ve 'Live web search returned no verifiable citations' uyarısı düşüyor.",
+    "Bu sorun business logicten çok provider response-shape toleransı/normalizasyon eksiği; /api/chat 200 dönmesine rağmen acceptance'ta zorunlu source doğrulaması kırılıyor.",
+    "Non-streaming text/voice pipeline contractları bu koşuda korundu (voice 3/3 geçti)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_core_intelligence_v2.py",
+    "/app/test_reports/iteration_16.json"
+  ],
+  "success_rate": {
+    "backend": "95% (40/42: unit 19/19 pass, real 19/21 pass)",
+    "frontend": "100% (login load smoke + google-login CTA görünürlüğü)"
+  },
+  "seed_data_creation": "test_core_intelligence_v2_real.py fixture'ı geçici signed session (auth_version=2) oluşturdu; teardown'da session, messages ve conversation_contexts temizlendi.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bu turda ücretli real suite tek kez çalıştırıldı. Yeniden full koşu yerine önce sources parse düzeltmesini yapıp yalnız failing testler (17,18) hedefli doğrulayın. Backend err logda failure anında iki kez 'Live web search returned no verifiable citations' görüldü.",
+  "rca of the issue": "Reproduction: pytest -n 0 /app/backend/tests/test_core_intelligence_v2_real.py tek koşuda test_17 ve test_18 fail (assert data['sources']). Gözlem: /api/chat 200, intent=travel_search, ancak sources boş. Log kanıtı: backend.err.log satır 2114 ve 2119 warning 'Live web search returned no verifiable citations'. Muhtemel kök neden: provider raw output citation alanları mevcut parser varyantları dışında dönüyor veya intermittent grounding metadata eksik geliyor. Mitigation: response.raw için ek citation formatlarını normalize etmek, sources zorunluysa provider-level retry/backoff veya alternate extraction path eklemek."
+}

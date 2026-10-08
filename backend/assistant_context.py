@@ -5,7 +5,9 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 import google_integration as gint
+from conversation_context import get_conversation_context, resolve_follow_up
 from date_resolver import fold_turkish, resolve_requested_date
+from personal_memory import personal_memory_reply
 from rapidfuzz import fuzz
 from workspace_data import load_workspace_source, rows_to_dicts
 
@@ -37,16 +39,18 @@ INTENT_EXAMPLES = {
 
 def _fuzzy_intent(folded: str) -> tuple[Optional[str], int]:
     cleaned = re.sub(r"\bnova\b", "", folded).strip(" ,.!?")
-    best_intent, best_score = None, 0
+    scores = []
     for intent, examples in INTENT_EXAMPLES.items():
         score = max(fuzz.WRatio(cleaned, example) for example in examples)
-        if score > best_score:
-            best_intent, best_score = intent, round(score)
-    return (best_intent, best_score) if best_score >= 70 else (None, best_score)
+        scores.append((intent, round(score)))
+    scores.sort(key=lambda item: item[1], reverse=True)
+    best_intent, best_score = scores[0]
+    second_score = scores[1][1] if len(scores) > 1 else 0
+    return (best_intent, best_score) if best_score >= 86 and best_score - second_score >= 6 else (None, best_score)
 
 
 def _has_fuzzy_token(folded: str, options: tuple[str, ...], threshold: int = 78) -> bool:
-    tokens = re.findall(r"[a-z0-9]+", folded)
+    tokens = [token for token in re.findall(r"[a-z0-9]+", folded) if len(token) >= 4]
     return any(
         fuzz.partial_ratio(token, option) >= threshold
         for token in tokens
@@ -68,27 +72,60 @@ def _semantic_intent(folded: str) -> Optional[str]:
     return None
 
 
+def _is_travel_search(folded: str) -> bool:
+    transport = (
+        "ulasim", "otobus", "ucak", "tren", "yht", "tcdd", "feribot",
+        "deniz otobusu", "arabayla", "aracla", "kopru", "rota", "seyahat",
+    )
+    action = ("arastir", "karsilastir", "en mantikli", "fiyat", "bilet", "nasil gider", "rota")
+    return any(word in folded for word in transport) and any(word in folded for word in action)
+
+
+def _requires_live_web(folded: str) -> bool:
+    markers = (
+        "yaknimda", "yakinimda", "su anda acik", "acik corbaci", "guncel fiyat",
+        "son haber", "internette arastir", "restoran bul", "otel bul", "etkinlik bul",
+        "ucus arastir", "otobus arastir", "tren arastir", "feribot arastir",
+        "menu", "musaitlik", "hava durumu", "bugun hava", "bu gece",
+    )
+    return any(marker in folded for marker in markers) or _is_travel_search(folded)
+
+
+def _web_needs_workspace(folded: str, target_date: Optional[date]) -> bool:
+    return bool(target_date) or any(word in folded for word in ("konser", "nikah", "programdan sonra", "etkinlikten sonra", "alanya"))
+
+
 def classify_intent(message: str, today: datetime) -> tuple[str, Optional[date]]:
+    memory = personal_memory_reply(message, today)
+    if memory:
+        return memory["intent"], None
     folded = fold_turkish(message)
+    target = resolve_requested_date(message, today)
     is_week = "bu hafta" in folded or "haftanin" in folded
     if is_week and ("rutin" in folded or "komagene" in folded):
         return "weekly_routines", None
     if is_week and any(word in folded for word in ("onemli", "oncelik", "islerim", "ne yap")):
         return "weekly_priorities", None
-    if is_week:
-        return "week_overview", None
-    target = resolve_requested_date(message, today)
-    if target and target != today.date():
-        return "calendar_date_query", target
     semantic_intent = _semantic_intent(folded)
     if semantic_intent:
         return semantic_intent, today.date() if semantic_intent in {"briefing", "today_schedule"} else None
+    if any(word in folded for word in ("bugun", "bugunku")) and any(
+        term in folded for term in ("konser", "nikah", "etkinlik", "nerede", "saat kac")
+    ):
+        return "calendar_date_query", today.date()
+    if _is_travel_search(folded):
+        return "travel_search", target
+    if _requires_live_web(folded):
+        return "web_search", target
+    calendar_terms = ("program", "takvim", "konser", "nikah", "etkinlik", "ne isim var", "nerede", "saat kac")
+    if target and any(term in folded for term in calendar_terms):
+        return "calendar_date_query", target
+    if is_week and any(word in folded for word in ("program", "takvim", "ne var")):
+        return "week_overview", None
     fuzzy_intent, _score = _fuzzy_intent(folded)
     if fuzzy_intent:
         return fuzzy_intent, today.date() if fuzzy_intent in {"briefing", "today_schedule"} else None
-    if target:
-        return "today_schedule", target
-    return "general", today.date()
+    return "general", None
 
 
 def _clean_description(value: str) -> str:
@@ -225,6 +262,9 @@ def _priority_reply(today: datetime, events: list, tasks: list[dict], projects: 
             continue
         days = (event_date - today.date()).days
         folded_event = fold_turkish(" ".join(str(event.get(key, "")) for key in ("title", "description")))
+        actionable_terms = ("tiyatral", "nikah", "komagene", "toplanti", "prova", "cekim", "klip", "randevu")
+        if not any(term in folded_event for term in actionable_terms):
+            continue
         if "tiyatral nikah" in folded_event:
             event_score = 400 - days * 10
         elif "komagene" in folded_event:
@@ -320,12 +360,103 @@ def _workspace_summary(sheet: Optional[dict]) -> str:
     return "\n\n".join(sections)
 
 
-async def build_chat_package(db, user_id: str, message: str, intent_override: Optional[str] = None) -> dict:
+def _relevant_web_context(message: str, events: list[dict], tasks: list[dict]) -> str:
+    stopwords = {"icin", "arastir", "ulasimimi", "sonra", "acik", "bul", "bora", "nova"}
+    tokens = {
+        token for token in re.findall(r"[a-z0-9]+", fold_turkish(message))
+        if len(token) >= 5 and token not in stopwords
+    }
+    event_lines = [
+        _event_line(event)
+        for event in events
+        if tokens and any(token in fold_turkish(" ".join(str(value) for value in event.values())) for token in tokens)
+    ]
+    task_lines = [
+        " | ".join(str(value) for value in task.values() if value)
+        for task in tasks
+        if tokens and any(token in fold_turkish(" ".join(str(value) for value in task.values())) for token in tokens)
+    ]
+    if not event_lines and not task_lines:
+        return "Calendar/Workspace içinde sorguyla eşleşen kayıt bulunamadı."
+    parts = []
+    if event_lines:
+        parts.append("İlgili Calendar etkinlikleri:\n" + "\n".join(f"- {line}" for line in event_lines[:5]))
+    if task_lines:
+        parts.append("İlgili Workspace görevleri:\n" + "\n".join(f"- {line}" for line in task_lines[:8]))
+    return "\n\n".join(parts)
+
+
+async def build_chat_package(
+    db,
+    user_id: str,
+    message: str,
+    intent_override: Optional[str] = None,
+    conversation_id: str = "default",
+) -> dict:
     now = datetime.now(gint.ISTANBUL_TZ)
+    stored_context = await get_conversation_context(db, user_id, conversation_id)
+    follow_up = resolve_follow_up(message, stored_context)
+    memory = None if follow_up else personal_memory_reply(message, now)
     intent, target_date = classify_intent(message, now)
+    prior_context = ""
+    if follow_up:
+        intent = follow_up["intent"]
+        prior_context = follow_up.get("prior_context", "")
+        if follow_up.get("reply"):
+            return {
+                "intent": intent,
+                "target_date": stored_context.get("target_date") if stored_context else None,
+                "calendar_summary": "",
+                "workspace_summary": "",
+                "core_doc_summary": "",
+                "events": (stored_context or {}).get("events", []),
+                "pending_count": 0,
+                "data_status": {"calendar": None, "sheets": None, "docs_fallback": False},
+                "reply": follow_up["reply"],
+                "prior_context": "",
+                "web_context": "",
+            }
+    elif memory:
+        return {
+            "intent": memory["intent"],
+            "target_date": None,
+            "calendar_summary": "",
+            "workspace_summary": "",
+            "core_doc_summary": "",
+            "events": [],
+            "pending_count": 0,
+            "data_status": {"calendar": None, "sheets": None, "docs_fallback": False},
+            "reply": memory["reply"],
+            "prior_context": "",
+            "web_context": "",
+        }
     if intent_override:
         intent = intent_override
         target_date = now.date() if intent in {"briefing", "today_schedule"} else target_date
+
+    workspace_intents = {
+        "briefing", "today_schedule", "pending_tasks", "weekly_priorities",
+        "weekly_routines", "week_overview", "calendar_date_query",
+    }
+    folded = fold_turkish(message)
+    needs_workspace = intent in workspace_intents or (
+        intent in {"web_search", "travel_search"} and _web_needs_workspace(folded, target_date)
+    )
+    if not needs_workspace:
+        return {
+            "intent": intent,
+            "target_date": target_date.isoformat() if target_date else None,
+            "calendar_summary": "",
+            "workspace_summary": "",
+            "core_doc_summary": "",
+            "events": [],
+            "pending_count": 0,
+            "data_status": {"calendar": None, "sheets": None, "docs_fallback": False},
+            "reply": None,
+            "prior_context": prior_context,
+            "web_context": "",
+        }
+
     if intent in {"weekly_priorities", "weekly_routines", "week_overview"}:
         query_start = now.date() - timedelta(days=now.weekday())
         query_end = query_start + timedelta(days=7)
@@ -371,6 +502,11 @@ async def build_chat_package(db, user_id: str, message: str, intent_override: Op
         project_note = _project_sentence(projects)
         reply = f"Bora, haftanın geçmiş kısmı: {past_text}. Kalan program: {upcoming_text}." + (f" {project_note}" if project_note else "")
 
+    web_context = (
+        _relevant_web_context(message, events, tasks)
+        if intent in {"web_search", "travel_search"}
+        else "\n\n".join(part for part in (calendar_summary, _workspace_summary(sheet)) if part)
+    )
     return {
         "intent": intent,
         "target_date": target_date.isoformat() if target_date else None,
@@ -381,4 +517,6 @@ async def build_chat_package(db, user_id: str, message: str, intent_override: Op
         "pending_count": len([task for task in tasks if fold_turkish(task.get("Durum", "")) not in {"tamam", "tamamlandi", "kapali"}]),
         "data_status": {"calendar": calendar_ok, "sheets": sheet_ok, "docs_fallback": bool(core_doc)},
         "reply": reply,
+        "prior_context": prior_context,
+        "web_context": web_context,
     }

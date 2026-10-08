@@ -7,6 +7,7 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - **Backend**: FastAPI + MongoDB (motor async) + Emergent Universal LLM Key
 - **Auth**: Emergent-managed Google OAuth + backend tek kullanıcı allowlist (`yapayzekasanatcisi@gmail.com`); session cookie `nova_session`, HttpOnly, signed with itsdangerous
 - **LLM**: `emergentintegrations.llm.chat.LlmChat` → OpenAI gpt-4o-mini
+- **Live Web**: Gemini 2.5 Flash + Google Search grounding; yalnız güncel sorgularda, doğrulanabilir citation zorunlu
 - **Voice**: OpenAI Whisper (STT) + OpenAI gpt-4o-mini-tts (TTS) via Emergent proxy
 - **Frontend**: React 19 + React Router + Framer Motion + Shadcn UI + Tailwind
 - **Theme**: Dark Warm Executive (Obsidian + Amber) — Cormorant Garamond serif + Plus Jakarta Sans
@@ -134,6 +135,18 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Son read-only production audit aktif run `54614e7e-ea06-457c-a231-a3e5153ffa9b` üzerinde geçti: users yalnız izinli hesap, `google_tokens` yalnız izinli owner, unauthorized session exchange sonrası hiçbir user/session/token/state artığı yok ve korumalı endpoint başarısı yok.
 - Audit anında logout/restart sonrası `sessions` koleksiyonu boştu; bu nedenle canlı bir dokümanda `auth_version=2` alanı post-hoc görülemedi. Version 2 yazımı kodda ve bağımsız testlerde doğrulandı; production gerçek login sonrası private istekler 200 geçti.
 
+## NOVA Core Intelligence V2 (2026-10-09, deploy approval pending)
+- Deterministik Personal Memory eklendi: Bora, Tuğba, Atakan, anne, Tolga doğum günleri; özel günler; yemek/çorba, mayonez, araç ve seyahat tercihleri.
+- Sebze yemeği kesin kuralı ile personal unknown fallback modelsiz çalışıyor; kayıtlı olmayan kişisel bilgi `Bu bilgi bende kayıtlı değil, Bora.` ile duruyor.
+- Router önceliği Conversation Context → Personal Memory → Workspace → Live Web → General LLM → Unknown olarak ayrıldı; RapidFuzz threshold/margin yükseltildi ve kısa-token false-positive yolu kapatıldı.
+- Personal Memory ve Workspace sorguları model çağrısı yapmıyor; general knowledge mevcut GPT-4o-mini üzerinden yalnız gerektiğinde çalışıyor.
+- Live Web, kullanıcı onayıyla Gemini 2.5 Flash + Google Search grounding kullanıyor. Annotation, grounding metadata, nested raw ve content URL formatları normalize ediliyor; citation yoksa tek düşük maliyetli retry, sonra dürüst web-failure uygulanıyor.
+- Travel query expansion Bursa–İstanbul köprü/feribot ve güncel ücret/sefer/süre araştırmasını; tarihli Alanya sorgularında Calendar/Workspace bağlamını ayrı deterministik katmanda birleştiriyor.
+- Conversation context `user_id + conversation_id` bazında tutuluyor; `Peki kaçta?` aynı etkinlik context'inden modelsiz cevaplanıyor. Text ve voice aynı `/api/chat` pipeline'ını kullanıyor; Whisper `Tuba` varyantı Tuğba olarak kabul ediliyor.
+- Haftalık öncelik motoru geçmiş etkinlikleri ve aksiyon içermeyen sosyal etkinlikleri mekanik iş olarak sıralamıyor.
+- Final test: unit/router 20/20 PASS. Bağımsız gerçek acceptance 19/21 sonrası iki citation sorunu düzeltildi; Alanya ve İstanbul hedefli gerçek provider retestleri PASS. Zorunlu 21 akışın tamamı final kodda PASS; voice 3/3, MOCKED API yok.
+- Production deploy kullanıcı seçimi gereği yapılmadı; açık onay bekleniyor.
+
 ## Backlog (next phases)
 ### P0
 - Gmail entegrasyonu
@@ -142,7 +155,6 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - NOVA'nın notu/işi otomatik ayırt edip doğru koleksiyona kaydetmesi (function calling)
 - Akşam raporu endpoint
 - Proaktif bildirimler (web push / telegram)
-- Araştırma yetenekleri (otobüs/uçak/otel karşılaştırma)
 - Komagene rutin otomasyonu (Salı/Cuma sipariş hatırlatıcısı otomatik oluştursun)
 - Abonelik takibi
 - Chat yanıtlarını SSE streaming ile kademeli göstermek
