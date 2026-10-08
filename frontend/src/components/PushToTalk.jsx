@@ -7,7 +7,7 @@ import { toast } from "sonner";
  * Push-to-talk button: records audio while held, releases to send to STT -> chat -> TTS playback.
  * Props: onState(state), onReply(text)
  */
-export const PushToTalk = ({ onState, onReply }) => {
+export const PushToTalk = ({ onState, onReply, testId }) => {
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const mediaRef = useRef(null);
@@ -33,7 +33,7 @@ export const PushToTalk = ({ onState, onReply }) => {
             return;
           }
           toast.message("Bora", { description: text });
-          const { answer } = await chatApi.send(text);
+          const { answer } = await chatApi.send(text, "default", "voice");
           onReply?.({ question: text, answer });
           onState?.("speaking");
           try {
@@ -77,7 +77,7 @@ export const PushToTalk = ({ onState, onReply }) => {
     <button
       onClick={toggle}
       disabled={busy && !recording}
-      data-testid="push-to-talk-button"
+      data-testid={testId}
       className={`group relative inline-flex items-center justify-center h-16 w-16 md:h-20 md:w-20 rounded-full
         ${recording ? "bg-red-500/90" : "bg-[color:var(--nova-amber)]"}
         text-black shadow-[0_0_40px_-5px_rgba(245,158,11,0.6)]

@@ -42,7 +42,7 @@ export const Layout = () => {
               <ChatPanel onState={setNovaState} extraMessage={lastReply} />
             </DialogContent>
           </Dialog>
-          <PushToTalk onState={setNovaState} onReply={setLastReply} />
+          <PushToTalk onState={setNovaState} onReply={setLastReply} testId="push-to-talk-button-mobile" />
         </div>
       </div>
 
@@ -50,7 +50,7 @@ export const Layout = () => {
       <aside className="hidden lg:flex fixed right-6 top-6 bottom-6 w-[380px] flex-col gap-4 z-20">
         <div className="nova-glass rounded-2xl p-6 flex flex-col items-center gap-5">
           <NovaOrb state={novaState} size={170} />
-          <PushToTalk onState={setNovaState} onReply={setLastReply} />
+          <PushToTalk onState={setNovaState} onReply={setLastReply} testId="push-to-talk-button-desktop" />
           <div className="text-center text-xs text-[color:var(--nova-text-3)] font-mono-nova">
             Mikrofona dokun ve konuş
           </div>

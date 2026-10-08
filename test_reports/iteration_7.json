@@ -1,0 +1,36 @@
+{
+  "summary": "Iteration_6 bağımsız retest tamamlandı: zorunlu 3 pytest dosyası birlikte çalıştırıldı (15/15), gerçek TTS->STT->chat(source=voice) komutları yeniden doğrulandı, briefing tarih/içerik eşleşmesi ve PushToTalk data-testid ayrımı UI’da doğrulandı.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_voice_real_e2e.py",
+    "/app/backend/tests/test_intent_classification.py",
+    "/app/backend/tests/test_nova_regression_real_data.py",
+    "/app/test_reports/pytest/pytest_results_iteration_7.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "assistant_context.service_briefing içinde _date_label kullanımıyla açık tarih ifadesi üretimi testte doğrulandı.",
+    "PushToTalk testId prop ayrımı (mobile/desktop) DOM seviyesinde çakışmasız doğrulandı.",
+    "Not: /app/auth_testing.md path’i bu workspace’te mevcut değil; bu retest kapsamında auth akışı session helper ile güvenli şekilde test edildi."
+  ],
+  "updated_files": [
+    "/app/test_reports/iteration_7.json"
+  ],
+  "success_rate": {
+    "backend": "100% (15/15)",
+    "frontend": "100% (zorunlu retest kontrolleri geçti)"
+  },
+  "seed_data_creation": "UI retest için geçici signed nova_session oluşturuldu ve test sonunda silindi; Google token/secret yazdırılmadı veya değiştirilmedi.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Bu iterasyonda yalnızca zorunlu bağımsız retest yapıldı. BRIEFING_HAS_DATE=True, BRIEFING_MATCHES_API=True, desktop/mobile push-to-talk count=1, eski duplicate count=0 doğrulandı.",
+  "rca of the issue": "Önceki iki bulgu için düzeltmelerin etkisi doğrulandı; aynı hatalar yeniden üretilemedi."
+}

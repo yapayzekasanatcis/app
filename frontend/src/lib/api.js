@@ -15,8 +15,8 @@ export const authApi = {
 };
 
 export const chatApi = {
-  send: (message, conversation_id = "default") =>
-    api.post("/chat", { message, conversation_id }).then(r => r.data),
+  send: (message, conversation_id = "default", source = "text") =>
+    api.post("/chat", { message, conversation_id, source }).then(r => r.data),
   history: (conversation_id = "default") =>
     api.get("/chat/history", { params: { conversation_id } }).then(r => r.data),
 };

@@ -65,9 +65,9 @@ export default function BugunPage() {
           </button>
         </div>
         {loading ? (
-          <div className="flex items-center gap-2 text-[color:var(--nova-text-2)]"><Loader2 className="h-4 w-4 animate-spin" /> Hazırlanıyor…</div>
+          <div className="flex items-center gap-2 text-[color:var(--nova-text-2)]" data-testid="briefing-loading"><Loader2 className="h-4 w-4 animate-spin" /> Hazırlanıyor…</div>
         ) : (
-          <p className="font-serif-display text-lg md:text-xl leading-relaxed text-[color:var(--nova-text)] whitespace-pre-wrap">
+          <p className="font-serif-display text-lg md:text-xl leading-relaxed text-[color:var(--nova-text)] whitespace-pre-wrap" data-testid="briefing-text">
             {briefing?.text}
           </p>
         )}

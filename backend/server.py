@@ -6,7 +6,7 @@ import tempfile
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import List, Optional, Annotated
+from typing import List, Optional, Annotated, Literal
 
 import httpx
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, HTTPException, UploadFile, File, Form
@@ -69,6 +69,7 @@ class SessionExchange(BaseModel):
 class ChatIn(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: str = Field(default="default", max_length=100)
+    source: Literal["text", "voice"] = "text"
 
 
 class TaskIn(BaseModel):
@@ -360,6 +361,7 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
         "conversation_id": body.conversation_id,
         "role": "user",
         "content": body.message,
+        "source": body.source,
         "created_at": now_iso(),
     })
     await db.messages.insert_one({
@@ -367,10 +369,11 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
         "conversation_id": body.conversation_id,
         "role": "assistant",
         "content": answer,
+        "source": body.source,
         "created_at": now_iso(),
     })
 
-    return {"answer": answer}
+    return {"answer": answer, "intent": package.get("intent", "general"), "source": body.source}
 
 
 @api.get("/chat/history")
@@ -385,7 +388,7 @@ async def chat_history(user: Annotated[dict, Depends(current_user)], conversatio
 # ---------- Daily briefing ----------
 @api.get("/briefing/today")
 async def briefing_today(user: Annotated[dict, Depends(current_user)]):
-    """Generate NOVA's natural-sounding today briefing from REAL data only."""
+    """Return the same real-data briefing used by text and voice commands."""
     today = datetime.now(ZoneInfo("Europe/Istanbul"))
     today_str = today.strftime("%Y-%m-%d")
 
@@ -400,36 +403,15 @@ async def briefing_today(user: Annotated[dict, Depends(current_user)]):
     }, {"_id": 0}).to_list(50)
     priorities = [t for t in tasks if t.get("is_priority")]
 
-    # Real Google Calendar events
-    gc_summary = await _google_calendar_summary_for_prompt(user)
     google_connected = gint.is_configured() and await gint.is_connected(db, user["id"])
-    google_events = []
-    if google_connected:
-        try:
-            google_events = await gint.get_todays_calendar_events(db, user["id"])
-        except Exception:
-            google_events = []
-
-    workspace_summary = await _google_workspace_summary_for_prompt(user)
-    system_prompt = await build_system_prompt(user, gc_summary, workspace_summary)
-    prompt = (
-        "Bugünün brifingini ver. Kurallar: "
-        "(1) Sadece yukarıdaki GERÇEK VERİ bölümlerinde yazanları kullan; UYDURMA. "
-        "(2) Google Takvim bağlı değilse bunu açıkça söyle: 'Google Takvim henüz bağlı değil, yerel takvim verisiyle devam ediyorum.' "
-        "(3) Komagene rutinini yalnızca GOOGLE WORKSPACE GERÇEK VERİ bölümünde varsa aktar. "
-        "(4) Takvim etkinliklerini saat ve isimle TAM olduğu gibi söyle; yoksa 'takvimde sabit program yok' de. "
-        "(5) 3-5 cümle, akıcı paragraf. 'Günaydın Bora' ile başla. Robotik liste ve kapanış kullanma."
-    )
     try:
-        client = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f'{user["id"]}:briefing-{today_str}-{int(today.timestamp())}',
-            system_message=system_prompt
-        ).with_model("openai", "gpt-4o-mini").with_params(temperature=0.3, max_tokens=400)
-        text = await client.send_message(UserMessage(text=prompt))
+        package = await build_chat_package(db, user["id"], "günün brifingi", intent_override="briefing")
+        text = package["reply"]
+        google_events = package["events"]
     except Exception as e:
         logger.exception("Briefing error")
         text = f"Günaydın Bora. Brifing üretilemedi: {str(e)[:100]}"
+        google_events = []
 
     return {
         "text": text,
@@ -438,7 +420,7 @@ async def briefing_today(user: Annotated[dict, Depends(current_user)]):
         "google_connected": google_connected,
         "google_configured": gint.is_configured(),
         "priorities": priorities,
-        "pending_count": len([t for t in tasks if not t.get("is_priority")]),
+        "pending_count": package.get("pending_count", 0) if "package" in locals() else 0,
         "date": today.strftime("%d %B %Y, %A"),
     }
 

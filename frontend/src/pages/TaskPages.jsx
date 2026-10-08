@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { tasksApi } from "@/lib/api";
 import { toast } from "sonner";
 import { Plus, Trash2, Check, Flag } from "lucide-react";
@@ -21,7 +21,7 @@ export const TaskList = ({ context, title, subtitle, filterPriority = false }) =
     title: "", description: "", priority: "normal", context: context || "kisisel", is_priority: false
   });
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
       const q = {};
@@ -35,9 +35,9 @@ export const TaskList = ({ context, title, subtitle, filterPriority = false }) =
     } finally {
       setLoading(false);
     }
-  };
+  }, [context, filterPriority]);
 
-  useEffect(() => { load(); }, [context, filterPriority]);
+  useEffect(() => { load(); }, [load]);
 
   const add = async (e) => {
     e.preventDefault();

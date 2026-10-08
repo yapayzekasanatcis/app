@@ -6,6 +6,7 @@ from typing import Optional
 
 import google_integration as gint
 from date_resolver import fold_turkish, resolve_requested_date
+from rapidfuzz import fuzz
 
 
 TR_MONTHS = [
@@ -13,6 +14,57 @@ TR_MONTHS = [
     "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
 ]
 TR_WEEKDAYS = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"]
+INTENT_EXAMPLES = {
+    "briefing": [
+        "gunun brifingini sesli oku", "briefingimi oku", "brifingimi oku",
+        "gunun ozetini oku", "sabah brifingimi anlat", "bugunun ozetini soyle",
+    ],
+    "today_schedule": [
+        "bugun programim ne", "bugunku programim ne", "bugun ne var",
+        "gunun programini soyle", "bugunku takvimimi anlat", "bugun ne yapiyorum",
+    ],
+    "pending_tasks": [
+        "bekleyen islerimi oku", "bekleyen gorevlerim ne", "yapilacak islerimi soyle",
+        "tamamlanmamis islerim ne", "bekleyen isleri anlat", "acik gorevlerimi oku",
+    ],
+    "weekly_priorities": [
+        "bu hafta en onemli islerim ne", "haftalik onceliklerimi soyle",
+        "bu haftanin onceliklerini oku", "bu hafta neye odaklanmaliyim",
+    ],
+}
+
+
+def _fuzzy_intent(folded: str) -> tuple[Optional[str], int]:
+    cleaned = re.sub(r"\bnova\b", "", folded).strip(" ,.!?")
+    best_intent, best_score = None, 0
+    for intent, examples in INTENT_EXAMPLES.items():
+        score = max(fuzz.WRatio(cleaned, example) for example in examples)
+        if score > best_score:
+            best_intent, best_score = intent, round(score)
+    return (best_intent, best_score) if best_score >= 70 else (None, best_score)
+
+
+def _has_fuzzy_token(folded: str, options: tuple[str, ...], threshold: int = 78) -> bool:
+    tokens = re.findall(r"[a-z0-9]+", folded)
+    return any(
+        fuzz.partial_ratio(token, option) >= threshold
+        for token in tokens
+        for option in options
+    )
+
+
+def _semantic_intent(folded: str) -> Optional[str]:
+    if _has_fuzzy_token(folded, ("bekleyen", "tamamlanmamis", "yapilacak")) and _has_fuzzy_token(
+        folded, ("is", "gorev"), threshold=72
+    ):
+        return "pending_tasks"
+    if _has_fuzzy_token(folded, ("brifing", "briefing", "ozet")):
+        return "briefing"
+    if _has_fuzzy_token(folded, ("bugun", "bugunku", "gunun")) and (
+        _has_fuzzy_token(folded, ("program", "takvim")) or "ne var" in folded
+    ):
+        return "today_schedule"
+    return None
 
 
 def rows_to_dicts(rows: list) -> list[dict]:
@@ -35,10 +87,16 @@ def classify_intent(message: str, today: datetime) -> tuple[str, Optional[date]]
     if is_week:
         return "week_overview", None
     target = resolve_requested_date(message, today)
+    if target and target != today.date():
+        return "calendar_date_query", target
+    semantic_intent = _semantic_intent(folded)
+    if semantic_intent:
+        return semantic_intent, today.date() if semantic_intent in {"briefing", "today_schedule"} else None
+    fuzzy_intent, _score = _fuzzy_intent(folded)
+    if fuzzy_intent:
+        return fuzzy_intent, today.date() if fuzzy_intent in {"briefing", "today_schedule"} else None
     if target:
-        return ("today" if target == today.date() else "date"), target
-    if "program" in folded and "bugun" in folded:
-        return "today", today.date()
+        return "today_schedule", target
     return "general", today.date()
 
 
@@ -86,6 +144,75 @@ def _project_sentence(projects: list[dict]) -> str:
         return ""
     rendered = [f"{p.get('Proje')} ({p.get('Durum')}; sonraki adım: {p.get('Sonraki Adım')})" for p in focus]
     return "Bora AI Stüdyo tarafında " + "; ".join(rendered) + "."
+
+
+def service_calendar_date_query(target_date: date, events: list, calendar_ok: bool) -> str:
+    label = _date_label(target_date)
+    if not calendar_ok:
+        return f"Bora, {label} için Google Takvim şu anda okunamadı; program yok diyemem."
+    if not events:
+        return f"Bora, {label} için NOVA özel takviminde etkinlik görünmüyor."
+    return f"Bora, {label} programında " + " ".join(
+        _event_line(event).rstrip(".") + "." for event in events
+    )
+
+
+def service_today_schedule(events: list, projects: list[dict], calendar_ok: bool) -> str:
+    if calendar_ok:
+        program = (
+            " ".join(_event_line(event, include_description=False).rstrip(".") + "." for event in events)
+            if events else "takviminde etkinlik görünmüyor."
+        )
+    else:
+        program = "Google Takvim şu anda okunamadı; program yok diyemem."
+    project_note = _project_sentence(projects)
+    return f"Bora, bugün {program}" + (f" {project_note}" if project_note else "")
+
+
+def service_pending_tasks(tasks: list[dict], sheet_ok: bool) -> str:
+    if not sheet_ok:
+        return "Bora, NOVA İş Merkezi şu anda okunamadı; bekleyen işin yok diyemem."
+    pending = [
+        task for task in tasks
+        if fold_turkish(task.get("Durum", "")) not in {"tamam", "tamamlandi", "kapali"}
+    ]
+    if not pending:
+        return "Bora, NOVA İş Merkezi'nde bekleyen iş görünmüyor."
+    lines = []
+    for task in pending:
+        due = task.get("Tarih / Son Tarih", "")
+        priority = task.get("Öncelik", "")
+        suffix = ", ".join(value for value in (due, priority) if value)
+        lines.append(f"- {task.get('İş')}" + (f" ({suffix})" if suffix else ""))
+    return f"Bora, NOVA İş Merkezi'nde {len(pending)} bekleyen iş var:\n" + "\n".join(lines)
+
+
+def service_briefing(
+    events: list,
+    tasks: list[dict],
+    projects: list[dict],
+    routines: list[dict],
+    now: datetime,
+    calendar_ok: bool,
+    sheet_ok: bool,
+) -> str:
+    schedule = service_today_schedule(events, projects, calendar_ok).removeprefix("Bora, ")
+    pending = [task for task in tasks if fold_turkish(task.get("Durum", "")) not in {"tamam", "tamamlandi", "kapali"}]
+    today_name = fold_turkish(TR_WEEKDAYS[now.weekday()])
+    today_routines = []
+    for routine in routines:
+        if fold_turkish(routine.get("Durum", "")) != "aktif":
+            continue
+        if re.search(rf"\b{today_name}\b", fold_turkish(routine.get("Tekrar", ""))):
+            today_routines.append(routine.get("Rutin", ""))
+    task_text = (
+        f"İş Merkezi'nde {len(pending)} bekleyen iş var; ilk sırada {pending[0].get('İş')}."
+        if sheet_ok and pending else
+        ("İş Merkezi'nde bekleyen iş görünmüyor." if sheet_ok else "İş Merkezi şu anda okunamadı.")
+    )
+    routine_text = f"Bugünün aktif rutini: {'; '.join(today_routines)}." if today_routines else ""
+    date_label = _date_label(now.date())
+    return " ".join(part for part in (f"Bora, {date_label} gününün özeti: {schedule}", task_text, routine_text) if part)
 
 
 def _parse_due_date(value: str) -> Optional[date]:
@@ -158,6 +285,10 @@ def _priority_reply(today: datetime, events: list, tasks: list[dict], projects: 
     return "Bora, bu haftanın en önemli üç işi şöyle:\n" + "\n".join(lines) + (f"\n\n{project_note}" if project_note else "")
 
 
+def service_weekly_priorities(today: datetime, events: list, tasks: list[dict], projects: list[dict]) -> str:
+    return _priority_reply(today, events, tasks, projects)
+
+
 def _weekly_routines_reply(today: datetime, routines: list[dict]) -> str:
     weekday_map = {fold_turkish(name): index for index, name in enumerate(TR_WEEKDAYS)}
     past, current, remaining = [], [], []
@@ -198,36 +329,52 @@ def _workspace_summary(sheet: Optional[dict]) -> str:
     return "\n\n".join(sections)
 
 
-async def build_chat_package(db, user_id: str, message: str) -> dict:
+async def build_chat_package(db, user_id: str, message: str, intent_override: Optional[str] = None) -> dict:
     now = datetime.now(gint.ISTANBUL_TZ)
     intent, target_date = classify_intent(message, now)
-    sheet = await gint.get_sheet_data(db, user_id)
+    if intent_override:
+        intent = intent_override
+        target_date = now.date() if intent in {"briefing", "today_schedule"} else target_date
+    sheet, sheet_ok = None, True
+    try:
+        sheet = await gint.get_sheet_data(db, user_id)
+    except Exception:
+        sheet_ok = False
     tasks = rows_to_dicts(sheet.get("İşler", [])) if sheet else []
     projects = rows_to_dicts(sheet.get("Projeler", [])) if sheet else []
     routines = rows_to_dicts(sheet.get("Rutinler", [])) if sheet else []
 
-    if intent in {"weekly_priorities", "weekly_routines", "week_overview"}:
-        week_start = now.date() - timedelta(days=now.weekday())
-        week_end = week_start + timedelta(days=7)
-        events = await gint.get_calendar_events_for_range(db, user_id, week_start, week_end)
-    else:
-        query_date = target_date or now.date()
-        events = await gint.get_calendar_events_for_date(db, user_id, query_date)
+    events, calendar_ok = [], True
+    try:
+        if intent in {"weekly_priorities", "weekly_routines", "week_overview"}:
+            week_start = now.date() - timedelta(days=now.weekday())
+            week_end = week_start + timedelta(days=7)
+            events = await gint.get_calendar_events_for_range(db, user_id, week_start, week_end)
+        else:
+            query_date = target_date or now.date()
+            events = await gint.get_calendar_events_for_date(db, user_id, query_date)
+    except Exception:
+        calendar_ok = False
+
+    core_doc = None
+    if not calendar_ok and not sheet_ok:
+        try:
+            core_doc = await gint.get_core_doc_text(db, user_id)
+        except Exception:
+            core_doc = None
 
     calendar_summary = "\n".join(f"- {_event_line(event)}" for event in events) or "Etkinlik YOK"
     reply = None
-    if intent == "date":
-        label = _date_label(target_date)
-        if events:
-            reply = f"Bora, {label} programında " + " ".join(_event_line(event).rstrip(".") + "." for event in events)
-        else:
-            reply = f"Bora, {label} için NOVA özel takviminde etkinlik görünmüyor."
-    elif intent == "today":
-        program = " ".join(_event_line(event, include_description=False).rstrip(".") + "." for event in events) if events else "takviminde etkinlik görünmüyor."
-        project_note = _project_sentence(projects)
-        reply = f"Bora, bugün {program}" + (f" {project_note}" if project_note else "")
+    if intent == "calendar_date_query":
+        reply = service_calendar_date_query(target_date, events, calendar_ok)
+    elif intent == "today_schedule":
+        reply = service_today_schedule(events, projects, calendar_ok)
+    elif intent == "briefing":
+        reply = service_briefing(events, tasks, projects, routines, now, calendar_ok, sheet_ok)
+    elif intent == "pending_tasks":
+        reply = service_pending_tasks(tasks, sheet_ok)
     elif intent == "weekly_priorities":
-        reply = _priority_reply(now, events, tasks, projects)
+        reply = service_weekly_priorities(now, events, tasks, projects)
     elif intent == "weekly_routines":
         reply = _weekly_routines_reply(now, routines)
     elif intent == "week_overview":
@@ -243,5 +390,9 @@ async def build_chat_package(db, user_id: str, message: str) -> dict:
         "target_date": target_date.isoformat() if target_date else None,
         "calendar_summary": calendar_summary,
         "workspace_summary": _workspace_summary(sheet),
+        "core_doc_summary": core_doc["text"][:2000] if core_doc else "",
+        "events": events,
+        "pending_count": len([task for task in tasks if fold_turkish(task.get("Durum", "")) not in {"tamam", "tamamlandi", "kapali"}]),
+        "data_status": {"calendar": calendar_ok, "sheets": sheet_ok, "docs_fallback": bool(core_doc)},
         "reply": reply,
     }

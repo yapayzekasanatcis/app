@@ -62,6 +62,17 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Transient 90 saniye Google gecikmesi için yalnız calendar source id/summary 300 saniye ve Sheets 120 saniye TTL cachelendi; Calendar `events.list` içerikleri her tarih sorgusunda canlı kalıyor.
 - Connect callback ve disconnect sonrası kullanıcı cache'i temizleniyor; bağımsız performans retesti 8/8 ve 4.42 saniyede geçti (`iteration_5.json`).
 
+## Unified Voice/Text Data Routing (2026-10-08)
+- Yazılı ChatPanel ve PushToTalk artık aynı `POST /api/chat` → `build_chat_package` → ortak intent service katmanını kullanıyor; mesaj kaydında `source=text|voice` tutuluyor.
+- Ortak servisler: `service_briefing`, `service_today_schedule`, `service_pending_tasks`, `service_weekly_priorities`, `service_calendar_date_query`.
+- `briefing`, `today_schedule`, `pending_tasks`, `weekly_priorities` ve tarih sorguları RapidFuzz tabanlı Türkçe semantik/fuzzy intent eşleştirmesine bağlandı.
+- Desteklenen varyasyonlar: bugün/bugünkü program, bugün ne var, günün programı, briefing/brifing/günün özeti, bekleyen işler/görevler; tipik Whisper hataları anlamı koruyor.
+- Ana ekran `GET /api/briefing/today` ve sesli brifing aynı deterministik gerçek veri servisinin birebir sonucunu kullanıyor.
+- Calendar ve Sheets bağımsız sorgulanıyor; kaynak hatasında yanlış biçimde “yok” denmiyor, iki kaynak da başarısızsa gerçek Docs fallback deneniyor.
+- Gerçek TTS → Whisper STT → chat E2E testinde üç zorunlu komut doğru intent ve gerçek Google verileriyle geçti: 8 Ekim konseri, Bora AI Stüdyo bağlamı ve 3 bekleyen Sheet işi.
+- Brifing açık `8 Ekim` tarih etiketi içeriyor; masaüstü/mobil PushToTalk test kimlikleri benzersiz.
+- Zorunlu bağımsız retest backend 15/15, frontend %100 geçti (`iteration_7.json`); mocked API yok.
+
 ## Backlog (next phases)
 ### P0
 - Gmail entegrasyonu
