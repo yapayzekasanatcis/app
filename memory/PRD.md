@@ -82,10 +82,14 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Kullanıcının son yüklediği `Altın Işıklı Şık Yönetici Portresi nova` resmi NOVA'nın tek resmi temsil görseli olarak bağlandı.
 - Kaynak PNG (1122×1402) generative değişiklik yapılmadan WebP'ye optimize edildi: `/frontend/public/nova-portrait.webp` (154604 bayt).
 - Masaüstü sağ NOVA panelinde eski büyük altın kürenin yerine ince siyah-altın çerçeveli 3:4 portre kullanılıyor; yüz/üst gövde odağı `50% 40%`.
+- Login ekranındaki eski turuncu orb tamamen kaldırıldı; resmi portre 3:4 oran, altın halo ve `Hazır` durumuyla giriş kimliğine bağlandı.
+- Bugün ekranındaki Günün Brifingi alanındaki eski turuncu orb kaldırıldı; ortak `NovaPortrait` bileşeni idle/listening/thinking/speaking durumlarıyla kullanılıyor.
 - Ayarlar sayfasına büyük 3:4 `Resmi Asistan Kimliği` bölümü eklendi; minimum crop ile yüz, saç ve üst gövde korunuyor.
 - Mobil alt çubukta aynı görselin küçük yuvarlak, yüz merkezli (`50% 38%`) avatarı kullanılıyor.
 - Hazır, Dinliyor, Düşünüyor ve Konuşuyor state'leri portre çerçevesindeki sakin/pulse/ring/yumuşak animasyonlarla korunuyor.
 - Bağımsız UI testi: frontend build, asset serve, masaüstü 1920×800 ve mobil 390×844 ana ekran/Ayarlar görünümleri %100 geçti; yatay taşma ve crop bozulması yok (`iteration_9.json`).
+- Login ve Bugün portre düzeltmesinin nihai doğrulaması masaüstü 1920×800 ve mobil 390×844 smoke testlerinde geçti: görseller yüklendi, çerçeveler tam 3:4 oranında kaldı ve yatay taşma oluşmadı.
+- Zorunlu bağımsız frontend retesti %100 geçti; eski orb DOM/UI kalıntısı bulunmadı, canlı Google Workspace snapshot bağlantısı doğrulandı ve mocked akış kullanılmadı (`iteration_13.json`).
 
 ## Shared Google Workspace Page Data Layer (2026-10-08)
 - Menü sayfalarının local Mongo `/tasks` ve `/events` bağımlılığı kaldırıldı; chat ve tüm ekranlar aynı `/backend/workspace_data.py` kaynağını kullanıyor.

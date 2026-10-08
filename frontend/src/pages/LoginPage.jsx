@@ -4,7 +4,7 @@ import { authApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { NovaOrb } from "@/components/NovaOrb";
+import { NovaPortrait } from "@/components/NovaPortrait";
 
 export default function LoginPage() {
   const { user, loading, refresh } = useAuth();
@@ -37,12 +37,23 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 py-10 nova-grain">
-      <div className="w-full max-w-md flex flex-col items-center gap-10">
-        <NovaOrb state="idle" size={180} />
+      <div className="w-full max-w-md flex flex-col items-center gap-7 md:gap-8">
+        <div className="flex flex-col items-center gap-3" data-testid="login-nova-identity">
+          <NovaPortrait
+            state="idle"
+            width="clamp(190px, 25vw, 230px)"
+            showLabel={false}
+            testId="nova-portrait-login"
+            priority
+          />
+          <div className="inline-flex items-center gap-2 font-mono-nova text-[10px] uppercase tracking-[0.24em] text-[color:var(--nova-text-2)]" data-testid="login-nova-status">
+            <span className="nova-dot" /> Hazır
+          </div>
+        </div>
 
         <div className="text-center">
           <div className="font-mono-nova text-xs uppercase tracking-[0.4em] text-[color:var(--nova-text-3)]">Hoş geldiniz</div>
-          <h1 className="font-serif-display text-5xl mt-3 text-[color:var(--nova-text)]">NOVA ASİSTAN</h1>
+          <h1 className="font-serif-display text-4xl sm:text-5xl mt-3 text-[color:var(--nova-text)]">NOVA ASİSTAN</h1>
           <p className="text-sm text-[color:var(--nova-text-2)] mt-3 max-w-sm">
             Bora'nın kişisel özel sekreteri. Takvim, iş, seyahat ve günlük yaşam tek merkezden koordine edilir.
           </p>

@@ -5,12 +5,13 @@ import { Clock, Flag, Volume2, Loader2, Link2, CalendarCheck } from "lucide-reac
 import { voiceApi } from "@/lib/api";
 import { useOutletContext, Link } from "react-router-dom";
 import { useWorkspaceData } from "@/context/WorkspaceDataContext";
+import { NovaPortrait } from "@/components/NovaPortrait";
 
 export default function BugunPage() {
   const [briefing, setBriefing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
-  const { setNovaState } = useOutletContext();
+  const { novaState, setNovaState } = useOutletContext();
   const { data: workspace } = useWorkspaceData();
   const todayEvents = workspace?.today_events || [];
   const priorities = workspace?.priorities || [];
@@ -52,29 +53,45 @@ export default function BugunPage() {
       </div>
 
       {/* Briefing */}
-      <div className="nova-card p-6 md:p-7 amber-glow" data-testid="daily-briefing-card">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <div>
-            <div className="font-mono-nova text-xs uppercase tracking-[0.25em] text-[color:var(--nova-amber)]">Günün Brifingi</div>
-            <div className="font-serif-display text-2xl mt-1">NOVA'dan size</div>
+      <div className="nova-card p-4 sm:p-6 md:p-7 amber-glow" data-testid="daily-briefing-card">
+        <div className="grid grid-cols-[82px_minmax(0,1fr)] sm:grid-cols-[110px_minmax(0,1fr)] md:grid-cols-[132px_minmax(0,1fr)] gap-4 sm:gap-6 items-start">
+          <div className="flex flex-col items-center gap-2" data-testid="dashboard-nova-identity">
+            <NovaPortrait
+              state={novaState}
+              width="clamp(82px, 12vw, 132px)"
+              showLabel={false}
+              testId="nova-portrait-dashboard"
+              priority
+            />
+            <div className="inline-flex items-center gap-1.5 font-mono-nova text-[9px] uppercase tracking-wider text-[color:var(--nova-text-3)]" data-testid="dashboard-nova-status">
+              <span className="nova-dot" /> {novaState === "listening" ? "Dinliyor" : novaState === "thinking" ? "Düşünüyor" : novaState === "speaking" ? "Konuşuyor" : "Hazır"}
+            </div>
           </div>
-          <button
-            onClick={speak}
-            disabled={playing || loading}
-            data-testid="briefing-speak-button"
-            className="h-10 px-4 rounded-full bg-[color:var(--nova-amber)]/15 text-[color:var(--nova-amber)] border border-[color:var(--nova-amber)]/30 flex items-center gap-2 text-sm hover:bg-[color:var(--nova-amber)]/25 transition-colors"
-          >
-            {playing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
-            Dinle
-          </button>
+          <div className="min-w-0">
+            <div className="flex items-start justify-between gap-3 mb-4 flex-wrap">
+              <div>
+                <div className="font-mono-nova text-[10px] sm:text-xs uppercase tracking-[0.22em] text-[color:var(--nova-amber)]">Günün Brifingi</div>
+                <div className="font-serif-display text-xl sm:text-2xl mt-1">NOVA'dan sana</div>
+              </div>
+              <button
+                onClick={speak}
+                disabled={playing || loading}
+                data-testid="briefing-speak-button"
+                className="h-9 sm:h-10 px-3 sm:px-4 rounded-full bg-[color:var(--nova-amber)]/15 text-[color:var(--nova-amber)] border border-[color:var(--nova-amber)]/30 flex items-center gap-2 text-xs sm:text-sm hover:bg-[color:var(--nova-amber)]/25 transition-colors"
+              >
+                {playing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Volume2 className="h-4 w-4" />}
+                Dinle
+              </button>
+            </div>
+            {loading ? (
+              <div className="flex items-center gap-2 text-[color:var(--nova-text-2)]" data-testid="briefing-loading"><Loader2 className="h-4 w-4 animate-spin" /> Hazırlanıyor…</div>
+            ) : (
+              <p className="font-serif-display text-base sm:text-lg md:text-xl leading-relaxed text-[color:var(--nova-text)] whitespace-pre-wrap" data-testid="briefing-text">
+                {briefing?.text}
+              </p>
+            )}
+          </div>
         </div>
-        {loading ? (
-          <div className="flex items-center gap-2 text-[color:var(--nova-text-2)]" data-testid="briefing-loading"><Loader2 className="h-4 w-4 animate-spin" /> Hazırlanıyor…</div>
-        ) : (
-          <p className="font-serif-display text-lg md:text-xl leading-relaxed text-[color:var(--nova-text)] whitespace-pre-wrap" data-testid="briefing-text">
-            {briefing?.text}
-          </p>
-        )}
       </div>
 
       {/* Grid: Priorities + Timeline + Warnings */}
