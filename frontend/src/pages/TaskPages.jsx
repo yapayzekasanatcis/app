@@ -44,7 +44,7 @@ export const TaskList = ({ context, title, subtitle, filterPriority = false }) =
     if (!form.title.trim()) return;
     try {
       await tasksApi.create(form);
-      toast.success("İş eklendi Bora Bey");
+      toast.success("İş eklendi Bora");
       setForm({ title: "", description: "", priority: "normal", context: context || form.context, is_priority: filterPriority });
       setOpen(false);
       load();

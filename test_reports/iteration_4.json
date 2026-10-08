@@ -1,0 +1,35 @@
+{
+  "summary": "Gerçek Google bağlı kullanıcı ile NOVA kritik regresyon backend+frontend testleri tamamlandı. Chat tarih/hafta mantığı, proje bağlamı, Komagene ayrımı ve TTS sözleşmesi doğrulandı.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nova_regression_real_data.py",
+    "/app/test_reports/pytest/pytest_results_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "/app/auth_testing.md dosyası ortamda bulunamadı (auth playbook referansı eksik).",
+    "TTS contract backend kodunda doğrulandı: model=gpt-4o-mini-tts, voice=coral, kadın/sıcak/profesyonel Türkçe instructions, speed=0.95."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_nova_regression_real_data.py",
+    "/app/backend/tests/cleanup_recent_prompt_messages.py",
+    "/app/test_reports/iteration_4.json"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8)",
+    "frontend": "100% (chat panel başlık/ifade ve 1920x800 + 390x844 taşma kontrolleri)"
+  },
+  "seed_data_creation": "Geçici nova_session oluşturuldu ve silindi. Google tokenlarına dokunulmadı, disconnect çağrılmadı. Test sırasında oluşturulan benzersiz conversation_id (TEST_reg_*) mesajları fixture teardown ile silindi.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Bu iterasyonda gerçek kullanıcı user_id=106153980006385211736 ile çalışıldı. Backend regresyonu pytest üzerinden geçti: bugün, 11 Ekim, 25 Ekim, gelecek cumartesi, haftalık öncelik, Komagene geçmiş/kalan ayrımı ve TTS header/mp3 doğrulandı. UI’da aynı sorgular chat panelden gönderildi; görünür içerikte 'Bora Bey' tespit edilmedi.",
+  "rca of the issue": "Ürünsel regresyon bulunmadı. Yalnız test otomasyonunda iki teknik engel yaşandı: (1) cookie injection parametre formatı, (2) mobilde genel chat selector'ının dialog dışı eşleşmesi. Selector/cookie ayarı düzeltilince akışlar geçti."
+}

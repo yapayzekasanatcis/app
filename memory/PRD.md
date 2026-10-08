@@ -16,7 +16,7 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 
 ## Core Requirements (static)
 1. Türkçe UI/sesli yanıt
-2. NOVA karakteri (sıcak, profesyonel, kısa cevap, "Bora Bey" hitabı)
+2. NOVA karakteri (sıcak, profesyonel, kısa cevap, "Bora" hitabı)
 3. Push-to-talk mikrofon + sesli dinleme
 4. Günlük brifing (takvim + öncelikler + bekleyen işler birleşik)
 5. Tasks (bağlama göre: kişisel/komagene/tiyatral-nikâh/bora-ai-studyo) + Öncelik işareti
@@ -49,6 +49,19 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Ayarlar > Gerçek Veriyi Doğrula ekranı Calendar, Sheets, Drive ve Docs sonuçlarını gösteriyor; mobil bildirim taşması düzeltildi.
 - Bağımsız Drive/Docs retest: backend 7/7 ve masaüstü/mobil Ayarlar akışı %100 geçti (`iteration_3.json`), mocked API yok.
 
+## Conversation Intelligence Update (2026-10-08)
+- Türkçe tarih çözümleyici eklendi (`dateparser` + kesin gün/ay/hafta günü çözümü): bugün, yarın, `11 Ekim`, `25 Ekim`, `gelecek cumartesi` gibi ifadeler Europe/Istanbul referansında çözümleniyor.
+- Tarih soruları cache yerine `NOVA ASİSTAN — Özel Takvim` üzerinde istenen günün 00:00–24:00 gerçek zamanlı Calendar sorgusunu çalıştırıyor.
+- Haftalık öncelik motoru takvim etkinliği yakınlığı, son tarih, seyahat, bilet/mekân bağımlılıkları ve proje durumunu birlikte değerlendiriyor.
+- Günlük/haftalık cevaplara Projeler sekmesindeki aktif ve bekleyen Bora AI Stüdyo bağlamı eklendi; Grup Karadüş klibi ve Kadına Şiddet serisi gerçek veriden aktarılıyor.
+- Komagene haftalık rutinleri haftanın geçmiş kısmı, bugün ve kalan işler olarak ayrılıyor; yalnız aktif Sheet rutinleri kullanılıyor.
+- Tüm yeni konuşma yüzeylerinde hitap `Bora`; eski görünür `Bora Bey` mesajları ekranda yeni hitaba normalize ediliyor.
+- TTS sesi OpenAI `gpt-4o-mini-tts` + `coral`, speed `0.95` ve kadın/sakin/sıcak/profesyonel Türkçe stil talimatına geçirildi.
+- Gerçek TTS ses örneği algısal analizde kadın, sakin, profesyonel, düşük robotiklik ve yüksek Türkçe netliği olarak değerlendirildi.
+- Zorunlu bağımsız gerçek veri regresyonu backend 8/8 ve frontend masaüstü/mobil %100 geçti (`iteration_4.json`); mocked API yok.
+- Transient 90 saniye Google gecikmesi için yalnız calendar source id/summary 300 saniye ve Sheets 120 saniye TTL cachelendi; Calendar `events.list` içerikleri her tarih sorgusunda canlı kalıyor.
+- Connect callback ve disconnect sonrası kullanıcı cache'i temizleniyor; bağımsız performans retesti 8/8 ve 4.42 saniyede geçti (`iteration_5.json`).
+
 ## Backlog (next phases)
 ### P0
 - Gmail entegrasyonu
@@ -60,6 +73,7 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Araştırma yetenekleri (otobüs/uçak/otel karşılaştırma)
 - Komagene rutin otomasyonu (Salı/Cuma sipariş hatırlatıcısı otomatik oluştursun)
 - Abonelik takibi
+- Chat yanıtlarını SSE streaming ile kademeli göstermek
 
 ### P2
 - PWA manifesto + offline önbellek

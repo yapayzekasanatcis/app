@@ -20,7 +20,7 @@ export default function LoginPage() {
       const sid = new URLSearchParams(hash.slice(1)).get("session_id");
       if (sid) {
         authApi.session(sid)
-          .then(() => { toast.success("Hoş geldiniz Bora Bey"); refresh(); navigate("/", { replace: true }); })
+          .then(() => { toast.success("Hoş geldin Bora"); refresh(); navigate("/", { replace: true }); })
           .catch(() => toast.error("Giriş başarısız"));
       }
     }
@@ -44,7 +44,7 @@ export default function LoginPage() {
           <div className="font-mono-nova text-xs uppercase tracking-[0.4em] text-[color:var(--nova-text-3)]">Hoş geldiniz</div>
           <h1 className="font-serif-display text-5xl mt-3 text-[color:var(--nova-text)]">NOVA ASİSTAN</h1>
           <p className="text-sm text-[color:var(--nova-text-2)] mt-3 max-w-sm">
-            Bora Bey'in kişisel özel sekreteri. Takvim, iş, seyahat ve günlük yaşam tek merkezden koordine edilir.
+            Bora'nın kişisel özel sekreteri. Takvim, iş, seyahat ve günlük yaşam tek merkezden koordine edilir.
           </p>
         </div>
 

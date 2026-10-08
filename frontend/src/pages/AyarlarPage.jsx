@@ -22,7 +22,7 @@ export default function AyarlarPage() {
 
   useEffect(() => {
     if (params.get("google") === "connected") {
-      toast.success("Google hesabı başarıyla bağlandı Bora Bey");
+      toast.success("Google hesabı başarıyla bağlandı Bora");
       refresh();
     }
     const err = params.get("google_error");

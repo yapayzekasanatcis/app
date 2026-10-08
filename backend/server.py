@@ -18,11 +18,13 @@ from pydantic import BaseModel, Field, ConfigDict
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from emergentintegrations.llm.chat import LlmChat, UserMessage
 from openai import AsyncOpenAI
+from zoneinfo import ZoneInfo
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import google_integration as gint
+from assistant_context import build_chat_package
 
 EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
 SESSION_SECRET = os.environ['SESSION_SECRET']
@@ -196,7 +198,7 @@ TR_MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
 
 def today_turkish_facts():
     """Return objective date facts only."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(ZoneInfo("Europe/Istanbul"))
     weekday_name = TR_WEEKDAYS[now.weekday()]
     day = now.day
     month_name = TR_MONTHS[now.month - 1]
@@ -239,9 +241,9 @@ async def build_system_prompt(
     gc_block = google_calendar_summary.strip() if google_calendar_summary.strip() else "GOOGLE_TAKVIM_BAGLI_DEGIL"
     workspace_block = google_workspace_summary.strip() if google_workspace_summary.strip() else "GOOGLE_WORKSPACE_BAGLI_DEGIL"
 
-    return f"""Sen NOVA ASİSTAN'sın — Bora Bey'in kişisel özel sekreteri.
+    return f"""Sen NOVA ASİSTAN'sın — Bora'nın kişisel özel sekreteri.
 
-KİMLİK: Türkçe konuşursun. Tonun sıcak, sakin, saygılı, profesyonel; robotik DEĞİL. "Bora Bey" diye hitap edersin. Cevapların kısa, net, aksiyon odaklı.
+KİMLİK: Türkçe konuşursun. Bora diye hitap edersin; "Bora Bey" deme. Tonun doğal, sıcak, sakin ve profesyonel bir özel sekreter gibidir. Robotik kapanışlar kullanma. Cevapların kısa, net ve aksiyon odaklıdır.
 
 BUGÜN: {facts['date_str']}
 
@@ -253,7 +255,7 @@ BUGÜN: {facts['date_str']}
 5) Bekleyen işleri sadece aşağıdaki listede varsa söyle.
 6) Bir tarih, rutin veya görev aşağıdaki gerçek veri alanlarında yoksa onu söyleme.
 
-── GOOGLE TAKVİM BUGÜN (gerçek) ──
+── GOOGLE TAKVİM İSTENEN DÖNEM (gerçek) ──
 {gc_block}
 
 ── GOOGLE WORKSPACE GERÇEK VERİ ──
@@ -324,20 +326,33 @@ async def _google_workspace_summary_for_prompt(user: dict) -> str:
 
 @api.post("/chat")
 async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
-    gc_summary = await _google_calendar_summary_for_prompt(user)
-    workspace_summary = await _google_workspace_summary_for_prompt(user)
-    system_prompt = await build_system_prompt(user, gc_summary, workspace_summary)
-    session_id = f'{user["id"]}:{body.conversation_id}'
     try:
-        client = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=session_id,
-            system_message=system_prompt
-        ).with_model("openai", "gpt-4o-mini").with_params(temperature=0.5, max_tokens=800)
-        answer = await client.send_message(UserMessage(text=body.message))
-    except Exception as e:
-        logger.exception("Chat error")
-        raise HTTPException(500, f"NOVA yanıt veremedi: {str(e)}")
+        package = await build_chat_package(db, user["id"], body.message)
+    except Exception:
+        logger.exception("Real-time conversation context failed")
+        package = {
+            "calendar_summary": "GOOGLE_TAKVIM_HATASI",
+            "workspace_summary": "GOOGLE_WORKSPACE_HATASI",
+            "reply": None,
+        }
+    system_prompt = await build_system_prompt(
+        user,
+        package["calendar_summary"],
+        package["workspace_summary"],
+    )
+    session_id = f'{user["id"]}:{body.conversation_id}'
+    answer = package.get("reply")
+    if not answer:
+        try:
+            client = LlmChat(
+                api_key=EMERGENT_LLM_KEY,
+                session_id=session_id,
+                system_message=system_prompt
+            ).with_model("openai", "gpt-4o-mini").with_params(temperature=0.25, max_tokens=800)
+            answer = await client.send_message(UserMessage(text=body.message))
+        except Exception as e:
+            logger.exception("Chat error")
+            raise HTTPException(500, f"NOVA yanıt veremedi: {str(e)}")
 
     # Save to conversation history
     await db.messages.insert_one({
@@ -371,7 +386,7 @@ async def chat_history(user: Annotated[dict, Depends(current_user)], conversatio
 @api.get("/briefing/today")
 async def briefing_today(user: Annotated[dict, Depends(current_user)]):
     """Generate NOVA's natural-sounding today briefing from REAL data only."""
-    today = datetime.now(timezone.utc)
+    today = datetime.now(ZoneInfo("Europe/Istanbul"))
     today_str = today.strftime("%Y-%m-%d")
 
     # Local app events
@@ -403,7 +418,7 @@ async def briefing_today(user: Annotated[dict, Depends(current_user)]):
         "(2) Google Takvim bağlı değilse bunu açıkça söyle: 'Google Takvim henüz bağlı değil, yerel takvim verisiyle devam ediyorum.' "
         "(3) Komagene rutinini yalnızca GOOGLE WORKSPACE GERÇEK VERİ bölümünde varsa aktar. "
         "(4) Takvim etkinliklerini saat ve isimle TAM olduğu gibi söyle; yoksa 'takvimde sabit program yok' de. "
-        "(5) 3-5 cümle, akıcı paragraf. 'Günaydın Bora Bey' ile başla. Robotik liste değil."
+        "(5) 3-5 cümle, akıcı paragraf. 'Günaydın Bora' ile başla. Robotik liste ve kapanış kullanma."
     )
     try:
         client = LlmChat(
@@ -414,7 +429,7 @@ async def briefing_today(user: Annotated[dict, Depends(current_user)]):
         text = await client.send_message(UserMessage(text=prompt))
     except Exception as e:
         logger.exception("Briefing error")
-        text = f"Günaydın Bora Bey. Brifing üretilemedi: {str(e)[:100]}"
+        text = f"Günaydın Bora. Brifing üretilemedi: {str(e)[:100]}"
 
     return {
         "text": text,
@@ -549,12 +564,22 @@ async def tts(text: str = Form(...), user: dict = Depends(current_user)):
     try:
         resp = await openai_client.audio.speech.create(
             model="gpt-4o-mini-tts",
-            voice="alloy",
+            voice="coral",
             input=text,
+            instructions=(
+                "Türkçe konuş. Doğal, sakin, sıcak ve profesyonel bir kadın sesi kullan. "
+                "Orta-alt perdede, net ve akıcı konuş; İstanbul Türkçesi hissi ver. "
+                "Robotik tonlama, aşırı neşe ve yapay vurgu kullanma."
+            ),
+            speed=0.95,
             response_format="mp3"
         )
         audio_bytes = resp.read() if hasattr(resp, 'read') else resp.content
-        return StreamingResponse(iter([audio_bytes]), media_type="audio/mpeg")
+        return StreamingResponse(
+            iter([audio_bytes]),
+            media_type="audio/mpeg",
+            headers={"X-Nova-Voice": "coral", "X-Nova-Voice-Style": "female-warm-professional"},
+        )
     except Exception as e:
         logger.exception("TTS error")
         raise HTTPException(500, f"Ses üretilemedi: {str(e)}")

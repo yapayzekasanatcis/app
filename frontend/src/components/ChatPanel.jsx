@@ -56,11 +56,17 @@ export const ChatPanel = ({ onState, extraMessage }) => {
     }
   };
 
+  const visibleContent = (message) => (
+    message.role === "assistant"
+      ? message.content.replace(/Bora Bey/g, "Bora")
+      : message.content
+  );
+
   return (
     <div className="flex flex-col h-full nova-glass rounded-2xl" data-testid="chat-panel">
       <div className="p-4 border-b border-[color:var(--nova-border)]">
         <div className="font-mono-nova text-xs uppercase tracking-[0.25em] text-[color:var(--nova-text-3)]">NOVA ile sohbet</div>
-        <div className="font-serif-display text-xl text-[color:var(--nova-text)] mt-1">Nasıl yardımcı olabilirim Bora Bey?</div>
+        <div className="font-serif-display text-xl text-[color:var(--nova-text)] mt-1">Nasıl yardımcı olabilirim Bora?</div>
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-4 min-h-[280px] max-h-[55vh]">
@@ -75,7 +81,7 @@ export const ChatPanel = ({ onState, extraMessage }) => {
               ${m.role === "user"
                 ? "bg-[color:var(--nova-amber)] text-black"
                 : "bg-[color:var(--nova-bg-3)] text-[color:var(--nova-text)] border border-[color:var(--nova-border)]"}`}>
-              {m.content}
+              {visibleContent(m)}
             </div>
           </div>
         ))}

@@ -20,7 +20,7 @@ export default function NotlarPage() {
     if (!form.content.trim()) return;
     try {
       await notesApi.create(form);
-      toast.success("Not kaydedildi Bora Bey");
+      toast.success("Not kaydedildi Bora");
       setForm({ title: "", content: "", category: "genel", context: "kisisel" });
       load();
     } catch { toast.error("Kaydedilemedi"); }

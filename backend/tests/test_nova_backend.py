@@ -194,7 +194,7 @@ class TestTTS:
     def test_tts_returns_mp3(self, auth_client, base_url):
         r = auth_client.post(
             f"{base_url}/api/voice/tts",
-            data={"text": "Merhaba Bora Bey, bugün güzel bir gün."},
+            data={"text": "Merhaba Bora, bugün güzel bir gün."},
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             timeout=60,
         )

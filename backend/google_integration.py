@@ -1,6 +1,7 @@
 """Google OAuth 2.0 + Calendar/Sheets/Drive/Docs read integration."""
 import logging
 import os
+import time
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -42,6 +43,28 @@ DOC_NAME = "NOVA ASİSTAN — Çekirdek Kurallar ve Rutinler"
 ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
 EXPECTED_CALENDAR_EVENT_TITLE = "Sezon Açılış Konseri — Bursa Bölge Devlet Senfoni Orkestrası"
 EXPECTED_CALENDAR_EVENT_LOCATION = "Merinos AKKM Osmangazi Salonu"
+CALENDAR_SOURCE_CACHE_TTL = 300
+SHEET_CACHE_TTL = 120
+_calendar_source_cache = {}
+_sheet_cache = {}
+
+
+def _cached(cache: dict, user_id: str, ttl: int):
+    item = cache.get(user_id)
+    if not item or time.monotonic() - item["stored_at"] > ttl:
+        cache.pop(user_id, None)
+        return None
+    return item["value"]
+
+
+def _store_cache(cache: dict, user_id: str, value):
+    cache[user_id] = {"stored_at": time.monotonic(), "value": value}
+    return value
+
+
+def clear_user_cache(user_id: str):
+    _calendar_source_cache.pop(user_id, None)
+    _sheet_cache.pop(user_id, None)
 
 
 class OAuthAccessLogFilter(logging.Filter):
@@ -236,16 +259,26 @@ def _to_istanbul_iso(value: Optional[str]) -> Optional[str]:
     return parsed.astimezone(ISTANBUL_TZ).isoformat()
 
 
-async def get_calendar_events_for_date(db, user_id: str, target_date: date) -> list:
-    """Return a named NOVA calendar's events for one Istanbul calendar day."""
+async def get_calendar_events_for_range(db, user_id: str, start_date: date, end_date: date) -> list:
+    """Return named NOVA calendar events for an Istanbul date range."""
     creds = await credentials_for(db, user_id)
     cal = _service("calendar", "v3", creds)
-    match = _find_named_calendar(cal)
-    calendar_id = match["id"] if match else "primary"
-    calendar_name = match["summary"] if match else "primary"
+    source = _cached(_calendar_source_cache, user_id, CALENDAR_SOURCE_CACHE_TTL)
+    if source is None:
+        match = _find_named_calendar(cal)
+        source = _store_cache(
+            _calendar_source_cache,
+            user_id,
+            {
+                "id": match["id"] if match else "primary",
+                "name": match["summary"] if match else "primary",
+            },
+        )
+    calendar_id = source["id"]
+    calendar_name = source["name"]
 
-    day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=ISTANBUL_TZ)
-    day_end = day_start + timedelta(days=1)
+    day_start = datetime.combine(start_date, datetime.min.time(), tzinfo=ISTANBUL_TZ)
+    day_end = datetime.combine(end_date, datetime.min.time(), tzinfo=ISTANBUL_TZ)
 
     ev = _http(cal.events().list(
         calendarId=calendar_id,
@@ -272,12 +305,20 @@ async def get_calendar_events_for_date(db, user_id: str, target_date: date) -> l
     return out
 
 
+async def get_calendar_events_for_date(db, user_id: str, target_date: date) -> list:
+    """Return a named NOVA calendar's events for one Istanbul calendar day."""
+    return await get_calendar_events_for_range(db, user_id, target_date, target_date + timedelta(days=1))
+
+
 async def get_todays_calendar_events(db, user_id: str) -> list:
     local_today = datetime.now(ISTANBUL_TZ).date()
     return await get_calendar_events_for_date(db, user_id, local_today)
 
 
 async def get_sheet_data(db, user_id: str):
+    cached = _cached(_sheet_cache, user_id, SHEET_CACHE_TTL)
+    if cached is not None:
+        return cached
     creds = await credentials_for(db, user_id)
     drive = _service("drive", "v3", creds)
     sheets = _service("sheets", "v4", creds)
@@ -292,7 +333,7 @@ async def get_sheet_data(db, user_id: str):
         ))
         out[tab] = r.get("values", [])
     out["_meta"] = {"id": sid, "name": files[0]["name"], "link": files[0].get("webViewLink")}
-    return out
+    return _store_cache(_sheet_cache, user_id, out)
 
 
 async def get_drive_folder_files(db, user_id: str):
@@ -469,12 +510,14 @@ def create_router(db, current_user):
             },
             upsert=True,
         )
+        clear_user_cache(user_id)
         await db.google_oauth_failures.delete_one({"user_id": user_id})
         return RedirectResponse(f"{FRONTEND_URL}/ayarlar?google=connected")
 
     @router.post("/disconnect")
     async def disconnect(user: dict = Depends(current_user)):
         await db.google_tokens.delete_one({"user_id": user["id"]})
+        clear_user_cache(user["id"])
         return {"ok": True}
 
     @router.get("/calendar/today")

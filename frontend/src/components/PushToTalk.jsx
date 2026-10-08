@@ -32,7 +32,7 @@ export const PushToTalk = ({ onState, onReply }) => {
             onState?.("idle");
             return;
           }
-          toast.message("Bora Bey", { description: text });
+          toast.message("Bora", { description: text });
           const { answer } = await chatApi.send(text);
           onReply?.({ question: text, answer });
           onState?.("speaking");
