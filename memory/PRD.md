@@ -75,6 +75,15 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Brifing açık `8 Ekim` tarih etiketi içeriyor; masaüstü/mobil PushToTalk test kimlikleri benzersiz.
 - Zorunlu bağımsız retest backend 15/15, frontend %100 geçti (`iteration_7.json`); mocked API yok.
 
+## NOVA Official Portrait Identity (2026-10-08)
+- Kullanıcının son yüklediği `Altın Işıklı Şık Yönetici Portresi nova` resmi NOVA'nın tek resmi temsil görseli olarak bağlandı.
+- Kaynak PNG (1122×1402) generative değişiklik yapılmadan WebP'ye optimize edildi: `/frontend/public/nova-portrait.webp` (154604 bayt).
+- Masaüstü sağ NOVA panelinde eski büyük altın kürenin yerine ince siyah-altın çerçeveli 3:4 portre kullanılıyor; yüz/üst gövde odağı `50% 40%`.
+- Ayarlar sayfasına büyük 3:4 `Resmi Asistan Kimliği` bölümü eklendi; minimum crop ile yüz, saç ve üst gövde korunuyor.
+- Mobil alt çubukta aynı görselin küçük yuvarlak, yüz merkezli (`50% 38%`) avatarı kullanılıyor.
+- Hazır, Dinliyor, Düşünüyor ve Konuşuyor state'leri portre çerçevesindeki sakin/pulse/ring/yumuşak animasyonlarla korunuyor.
+- Bağımsız UI testi: frontend build, asset serve, masaüstü 1920×800 ve mobil 390×844 ana ekran/Ayarlar görünümleri %100 geçti; yatay taşma ve crop bozulması yok (`iteration_9.json`).
+
 ## Backlog (next phases)
 ### P0
 - Gmail entegrasyonu

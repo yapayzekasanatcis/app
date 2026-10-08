@@ -92,6 +92,99 @@
     width: 6px; height: 6px; border-radius: 999px; background: var(--nova-amber);
     box-shadow: 0 0 10px var(--nova-amber);
   }
+  .nova-identity-panel {
+    background:
+      linear-gradient(115deg, rgba(245, 158, 11, 0.08), transparent 42%),
+      var(--nova-bg-2);
+  }
+}
+
+/* NOVA official portrait identity */
+.nova-portrait-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+}
+.nova-portrait-wrap.is-avatar {
+  display: block;
+  flex: 0 0 auto;
+}
+.nova-portrait-frame {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  max-width: 100%;
+  overflow: visible;
+  border-radius: 8px;
+  border: 1px solid rgba(229, 169, 60, 0.68);
+  background: #090806;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.92),
+    0 16px 45px -22px rgba(0, 0, 0, 0.95),
+    0 0 34px -14px rgba(245, 158, 11, 0.42);
+  transition: box-shadow 320ms ease, border-color 320ms ease, transform 320ms ease;
+}
+.nova-portrait-frame::before {
+  content: '';
+  position: absolute;
+  inset: -5px;
+  z-index: -1;
+  border-radius: 11px;
+  border: 1px solid rgba(245, 158, 11, 0.22);
+  opacity: 0.72;
+  transition: opacity 320ms ease, border-color 320ms ease, transform 320ms ease;
+}
+.nova-portrait-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 7px;
+  object-fit: cover;
+  object-position: 50% 40%;
+}
+.nova-portrait-frame.idle {
+  animation: portraitBreathe 5s ease-in-out infinite;
+}
+.nova-portrait-frame.listening {
+  border-color: rgba(245, 158, 11, 0.95);
+  box-shadow: 0 0 0 1px #050403, 0 0 42px -8px rgba(245, 158, 11, 0.78);
+  animation: portraitListen 1.25s ease-in-out infinite;
+}
+.nova-portrait-frame.thinking::before {
+  border-color: rgba(229, 169, 60, 0.78);
+  animation: portraitRing 1.8s ease-in-out infinite;
+}
+.nova-portrait-frame.speaking {
+  box-shadow: 0 0 0 1px #050403, 0 0 48px -6px rgba(245, 158, 11, 0.82);
+  animation: portraitSpeak 0.85s ease-in-out infinite alternate;
+}
+.nova-avatar-frame {
+  aspect-ratio: 1;
+  border-radius: 999px;
+}
+.nova-avatar-frame::before {
+  inset: -3px;
+  border-radius: 999px;
+}
+.nova-avatar-frame .nova-portrait-image {
+  border-radius: 999px;
+  object-position: 50% 38%;
+}
+@keyframes portraitBreathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(0,0,0,0.92), 0 16px 45px -22px rgba(0,0,0,0.95), 0 0 28px -16px rgba(245,158,11,0.35); }
+  50% { box-shadow: 0 0 0 1px rgba(0,0,0,0.92), 0 16px 45px -22px rgba(0,0,0,0.95), 0 0 40px -12px rgba(245,158,11,0.5); }
+}
+@keyframes portraitListen {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.025); }
+}
+@keyframes portraitRing {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.035); opacity: 1; }
+}
+@keyframes portraitSpeak {
+  from { transform: translateY(0); }
+  to { transform: translateY(-2px); }
 }
 
 /* NOVA Avatar Orb */

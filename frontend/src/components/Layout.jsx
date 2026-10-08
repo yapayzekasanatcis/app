@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Outlet } from "react-router-dom";
 import Sidebar from "@/components/Sidebar";
-import NovaOrb from "@/components/NovaOrb";
+import NovaPortrait from "@/components/NovaPortrait";
 import PushToTalk from "@/components/PushToTalk";
 import ChatPanel from "@/components/ChatPanel";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogHeader } from "@/components/ui/dialog";
@@ -24,7 +24,14 @@ export const Layout = () => {
       {/* Floating NOVA + Push-to-talk (mobile) */}
       <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 nova-glass border-t border-[color:var(--nova-border)] px-3 py-3 flex items-center justify-between gap-2 overflow-hidden">
         <div className="flex min-w-0 items-center gap-3">
-          <div className={`nova-orb nova-orb-compact shrink-0 ${novaState}`} />
+          <NovaPortrait
+            state={novaState}
+            variant="avatar"
+            width={42}
+            showLabel={false}
+            testId="nova-avatar-mobile"
+            priority
+          />
           <div>
             <div className="font-mono-nova text-[10px] uppercase tracking-widest text-[color:var(--nova-text-3)]">NOVA</div>
             <div className="text-sm">{novaState === "idle" ? "Hazır" : novaState === "listening" ? "Dinliyor" : novaState === "thinking" ? "Düşünüyor" : "Konuşuyor"}</div>
@@ -49,7 +56,7 @@ export const Layout = () => {
       {/* Desktop floating NOVA panel */}
       <aside className="hidden lg:flex fixed right-6 top-6 bottom-6 w-[380px] flex-col gap-4 z-20">
         <div className="nova-glass rounded-2xl p-6 flex flex-col items-center gap-5">
-          <NovaOrb state={novaState} size={170} />
+          <NovaPortrait state={novaState} width={168} testId="nova-portrait-desktop" priority />
           <PushToTalk onState={setNovaState} onReply={setLastReply} testId="push-to-talk-button-desktop" />
           <div className="text-center text-xs text-[color:var(--nova-text-3)] font-mono-nova">
             Mikrofona dokun ve konuş

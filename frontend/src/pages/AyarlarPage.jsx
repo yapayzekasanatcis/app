@@ -4,6 +4,7 @@ import { googleApi } from "@/lib/googleApi";
 import { toast } from "sonner";
 import { CheckCircle2, XCircle, Link2, Unlink, FileText, Table, FolderOpen, Loader2, RefreshCw } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
+import NovaPortrait from "@/components/NovaPortrait";
 
 export default function AyarlarPage() {
   const { user, logout } = useAuth();
@@ -66,6 +67,30 @@ export default function AyarlarPage() {
         <div className="font-mono-nova text-xs uppercase tracking-[0.3em] text-[color:var(--nova-text-3)]">Ayarlar</div>
         <h1 className="font-serif-display text-4xl md:text-5xl mt-2 text-[color:var(--nova-text)]">Ayarlar</h1>
       </div>
+
+      <section className="nova-card nova-identity-panel overflow-hidden" data-testid="nova-identity-settings">
+        <div className="grid items-center gap-8 md:grid-cols-[minmax(210px,280px)_1fr]">
+          <div className="flex justify-center md:justify-start">
+            <NovaPortrait
+              state="idle"
+              width={260}
+              showLabel={false}
+              testId="nova-portrait-settings"
+              priority
+            />
+          </div>
+          <div className="min-w-0 px-6 pb-7 md:px-0 md:pb-0 md:pr-8">
+            <div className="font-mono-nova text-xs uppercase tracking-[0.3em] text-[color:var(--nova-amber)]" data-testid="nova-identity-eyebrow">Resmi Asistan Kimliği</div>
+            <h2 className="font-serif-display text-3xl md:text-4xl text-[color:var(--nova-text)] mt-2" data-testid="nova-identity-title">NOVA</h2>
+            <p className="mt-3 max-w-xl text-sm md:text-base leading-relaxed text-[color:var(--nova-text-2)]" data-testid="nova-identity-description">
+              Bora'nın güçlü, zarif ve güven veren özel asistanı. Profesyonel karar desteği ile günlük akışı sakin ve net biçimde yönetir.
+            </p>
+            <div className="mt-5 inline-flex items-center gap-2 text-sm text-emerald-300" data-testid="nova-identity-status">
+              <span className="nova-dot" /> Hazır
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Hesap */}
       <div className="nova-card p-6">
