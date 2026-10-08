@@ -98,6 +98,19 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Bağımsız backend snapshot testi ve masaüstü 1920×800/mobil 390×844 SPA testi %100 geçti (`iteration_11.json`); sayfalarda `/api/tasks` veya `/api/events` isteği yok, production API mocked değil.
 - Son regresyon: backend 46/46, frontend production build başarılı; geçici test session kalıntısı yok.
 
+## Security Hardening and PASS Re-audit (2026-10-08)
+- CORS wildcard kaldırıldı; preview, FRONTEND_URL production origin ve `novaasistan.com`/`www` exact allowlist kullanıyor. Beklenmeyen Origin 403; credentialed wildcard reflection yok.
+- Session cookie HttpOnly + Secure + SameSite=Lax + Path=/ + 7 gün; `SESSION_SECRET` güçlü rastgele değerle döndürüldü, Google token encryption key korunarak mevcut bağlantı bozulmadı.
+- Signed, session-bound HMAC CSRF token `/api/auth/csrf` ile tüm authenticated POST/PUT/PATCH/DELETE isteklerinde zorunlu. Origin/Referer kontrolü ve frontend Axios otomatik CSRF akışı eklendi.
+- Google connect GET'ten CSRF korumalı POST'a geçirildi; OAuth callback standard PKCE + tek kullanımlık süreli state korumasını sürdürüyor.
+- Ham provider exception mesajları istemci/loglardan kaldırıldı; sabit güvenli mesajlar ve yalnız exception type logging kullanılıyor. OAuth callback code/state/token redaksiyonu korundu; geçmiş loglar sanitize edildi.
+- Chat 30/dk, TTS ve STT 20/dk signed-session sliding-window rate limit; 429 + Retry-After eklendi.
+- Backend ve frontend için CSP, HSTS, nosniff, Referrer-Policy, Permissions-Policy, X-Frame-Options/frame-ancestors ve CORP başlıkları eklendi; API cevapları no-store.
+- `/api/google/verify` admin-only; env dosyaları gitignore altında ve third-party base URL'ler env kaynaklı.
+- Zorunlu testing agent: security 9/9, full + bağımsız kontroller toplam 62/62; browser CSRF negative/positive, cookie, CORS, redaksiyon, rate limit, headers ve production build geçti (`iteration_12.json`).
+- Security Audit re-run verdict: `PASS — NO MATERIAL FUNCTIONAL ISSUES FOUND`; güvenlik açısından READY.
+- P3 bakım: çok-worker ortamında distributed rate-limit store; production CSP unsafe-inline azaltma; production ingress CORS davranışını yayın sonrası runtime doğrulama.
+
 ## Backlog (next phases)
 ### P0
 - Gmail entegrasyonu

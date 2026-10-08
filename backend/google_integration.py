@@ -4,7 +4,7 @@ import os
 import time
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -23,6 +23,7 @@ GOOGLE_CLIENT_SECRET = os.environ["GOOGLE_CLIENT_SECRET"]
 GOOGLE_REDIRECT_URI = os.environ["GOOGLE_REDIRECT_URI"]
 FRONTEND_URL = os.environ["FRONTEND_URL"]
 TOKEN_ENCRYPTION_KEY = os.environ["TOKEN_ENCRYPTION_KEY"]
+ADMIN_EMAILS = {email.strip().lower() for email in os.environ["ADMIN_EMAILS"].split(",") if email.strip()}
 
 fernet = Fernet(TOKEN_ENCRYPTION_KEY.encode()) if TOKEN_ENCRYPTION_KEY else None
 
@@ -205,7 +206,8 @@ def _http(call):
     try:
         return call.execute()
     except HttpError as e:
-        raise HTTPException(e.resp.status, f"Google API hatası: {e}") from e
+        logger.warning("Google API request failed status=%s", e.resp.status)
+        raise HTTPException(e.resp.status, "Google hizmetine erişilemedi") from e
 
 
 def _drive_literal(value: str) -> str:
@@ -413,7 +415,7 @@ def create_router(db, current_user):
             "configuration_error": configuration_error(),
         }
 
-    @router.get("/connect")
+    @router.post("/connect")
     async def connect(request: Request, user: dict = Depends(current_user)):
         if not is_configured():
             raise HTTPException(503, configuration_error() or "Google Cloud OAuth henüz yapılandırılmadı")
@@ -423,7 +425,7 @@ def create_router(db, current_user):
             access_type="offline",
             include_granted_scopes="true",
             prompt="consent",
-            login_hint="yapayzekasanatcisi@gmail.com",
+            login_hint=user.get("email"),
         )
         # Store state in DB bound to user (cookie might be stripped by Google redirect)
         await db.google_oauth_states.insert_one({
@@ -441,7 +443,7 @@ def create_router(db, current_user):
         state_q = request.query_params.get("state")
         err = request.query_params.get("error")
         if err:
-            return RedirectResponse(f"{FRONTEND_URL}/ayarlar?google_error={err}")
+            return RedirectResponse(f"{FRONTEND_URL}/ayarlar?google_error={quote(err, safe='')}")
         if not state_q:
             raise HTTPException(400, "Geçersiz state")
         state_doc = await db.google_oauth_states.find_one({"state": state_q})
@@ -474,7 +476,7 @@ def create_router(db, current_user):
                 "user_id": user_id,
                 "http_status": token_audit.get("http_status"),
                 "error": token_audit.get("error") or type(exc).__name__,
-                "error_description": token_audit.get("error_description") or str(exc)[:500],
+                "error_description": token_audit.get("error_description") or "Token exchange failed",
                 "created_at": datetime.now(timezone.utc).isoformat(),
             }
             await db.google_oauth_failures.replace_one(
@@ -551,6 +553,8 @@ def create_router(db, current_user):
 
     @router.get("/verify")
     async def verify_workspace(user: dict = Depends(current_user)):
+        if user.get("email", "").lower() not in ADMIN_EMAILS:
+            raise HTTPException(403, "Bu işlem için yönetici yetkisi gerekli")
         target_date = date(2026, 10, 8)
         events = await get_calendar_events_for_date(db, user["id"], target_date)
         target_events = [

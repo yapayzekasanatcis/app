@@ -11,7 +11,7 @@ from typing import List, Optional, Annotated, Literal
 
 import httpx
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, HTTPException, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from dotenv import load_dotenv
@@ -27,6 +27,7 @@ load_dotenv(ROOT_DIR / '.env')
 import google_integration as gint
 from assistant_context import build_chat_package
 from workspace_data import build_workspace_snapshot
+from security import BrowserSecurityMiddleware, configured_origins, csrf_token_for_request
 
 EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
 SESSION_SECRET = os.environ['SESSION_SECRET']
@@ -38,10 +39,22 @@ db = mongo_client[os.environ['DB_NAME']]
 
 serializer = URLSafeTimedSerializer(SESSION_SECRET)
 
+
+def set_session_cookie(response: Response, token: str):
+    response.set_cookie(
+        "nova_session",
+        token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+        path="/",
+    )
+
 # OpenAI client via Emergent proxy for TTS/STT (universal key compatible)
 openai_client = AsyncOpenAI(
     api_key=EMERGENT_LLM_KEY,
-    base_url="https://integrations.emergentagent.com/llm"
+    base_url=os.environ["OPENAI_BASE_URL"]
 )
 NOVA_TTS_PRIMARY_VOICE = "nova"
 NOVA_TTS_FALLBACK_VOICE = "marin"
@@ -187,17 +200,24 @@ async def auth_session(payload: SessionExchange, response: Response):
         "created_at": now_iso(),
     })
     token = serializer.dumps(local_sid)
-    response.set_cookie(
-        "nova_session", token,
-        httponly=True, secure=True, samesite="none",
-        max_age=60 * 60 * 24 * 7, path="/"
-    )
+    set_session_cookie(response, token)
     return User(**user_doc).model_dump()
 
 
 @api.get("/auth/me")
 async def auth_me(user: Annotated[dict, Depends(current_user)]):
     return User(**user).model_dump()
+
+
+@api.get("/auth/csrf")
+async def auth_csrf(request: Request, user: Annotated[dict, Depends(current_user)]):
+    try:
+        return JSONResponse(
+            {"csrf_token": csrf_token_for_request(request)},
+            headers={"Cache-Control": "no-store"},
+        )
+    except (BadSignature, SignatureExpired):
+        raise HTTPException(401, "Oturum geçersiz veya süresi dolmuş")
 
 
 @api.post("/auth/logout")
@@ -209,7 +229,7 @@ async def auth_logout(request: Request, response: Response):
             await db.sessions.delete_one({"session_id": sid})
         except BadSignature:
             pass
-    response.delete_cookie("nova_session", path="/", samesite="none", secure=True)
+    response.delete_cookie("nova_session", path="/", samesite="lax", secure=True)
     return {"ok": True}
 
 
@@ -316,9 +336,9 @@ async def _google_calendar_summary_for_prompt(user: dict) -> str:
         return "\n".join(lines)
     except HTTPException:
         return "GOOGLE_TAKVIM_HATASI"
-    except Exception as e:
-        logger.exception("google calendar fetch failed")
-        return f"GOOGLE_TAKVIM_HATASI: {str(e)[:60]}"
+    except Exception as exc:
+        logger.error("Google calendar fetch failed type=%s", type(exc).__name__)
+        return "GOOGLE_TAKVIM_HATASI"
 
 
 async def _google_workspace_summary_for_prompt(user: dict) -> str:
@@ -335,14 +355,14 @@ async def _google_workspace_summary_for_prompt(user: dict) -> str:
                 sections.append(f"{tab}:\n{rendered or 'VERİ YOK'}")
         else:
             sections.append("NOVA İş Merkezi: DOSYA BULUNAMADI")
-    except Exception:
-        logger.exception("google sheets fetch failed")
+    except Exception as exc:
+        logger.error("Google sheets fetch failed type=%s", type(exc).__name__)
         sections.append("NOVA İş Merkezi: OKUMA HATASI")
     try:
         doc = await gint.get_core_doc_text(db, user["id"])
         sections.append(f"Çekirdek Kurallar:\n{doc['text'][:12000]}" if doc else "Çekirdek Kurallar: DOSYA BULUNAMADI")
-    except Exception:
-        logger.exception("google docs fetch failed")
+    except Exception as exc:
+        logger.error("Google docs fetch failed type=%s", type(exc).__name__)
         sections.append("Çekirdek Kurallar: OKUMA HATASI")
     return "\n\n".join(sections)
 
@@ -351,8 +371,8 @@ async def _google_workspace_summary_for_prompt(user: dict) -> str:
 async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
     try:
         package = await build_chat_package(db, user["id"], body.message)
-    except Exception:
-        logger.exception("Real-time conversation context failed")
+    except Exception as exc:
+        logger.error("Real-time conversation context failed type=%s", type(exc).__name__)
         package = {
             "calendar_summary": "GOOGLE_TAKVIM_HATASI",
             "workspace_summary": "GOOGLE_WORKSPACE_HATASI",
@@ -373,9 +393,9 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
                 system_message=system_prompt
             ).with_model("openai", "gpt-4o-mini").with_params(temperature=0.25, max_tokens=800)
             answer = await client.send_message(UserMessage(text=body.message))
-        except Exception as e:
-            logger.exception("Chat error")
-            raise HTTPException(500, f"NOVA yanıt veremedi: {str(e)}")
+        except Exception as exc:
+            logger.error("Chat provider error type=%s", type(exc).__name__)
+            raise HTTPException(500, "NOVA şu anda yanıt veremiyor")
 
     # Save to conversation history
     await db.messages.insert_one({
@@ -430,9 +450,9 @@ async def briefing_today(user: Annotated[dict, Depends(current_user)]):
         package = await build_chat_package(db, user["id"], "günün brifingi", intent_override="briefing")
         text = package["reply"]
         google_events = package["events"]
-    except Exception as e:
-        logger.exception("Briefing error")
-        text = f"Günaydın Bora. Brifing üretilemedi: {str(e)[:100]}"
+    except Exception as exc:
+        logger.error("Briefing error type=%s", type(exc).__name__)
+        text = "Günaydın Bora. Brifing şu anda güvenli biçimde üretilemedi."
         google_events = []
 
     return {
@@ -558,9 +578,9 @@ async def stt(file: UploadFile = File(...), user: dict = Depends(current_user)):
                 language="tr"
             )
         return {"text": tr.text}
-    except Exception as e:
-        logger.exception("STT error")
-        raise HTTPException(500, f"Ses metne çevrilemedi: {str(e)}")
+    except Exception as exc:
+        logger.error("STT provider error type=%s", type(exc).__name__)
+        raise HTTPException(500, "Ses şu anda metne çevrilemedi")
     finally:
         if path:
             Path(path).unlink(missing_ok=True)
@@ -607,9 +627,9 @@ async def tts(text: str = Form(...), user: dict = Depends(current_user)):
                 "X-Nova-TTS-Mode": "single-request",
             },
         )
-    except Exception as e:
-        logger.exception("TTS error")
-        raise HTTPException(500, f"Ses üretilemedi: {str(e)}")
+    except Exception as exc:
+        logger.error("TTS provider error type=%s", type(exc).__name__)
+        raise HTTPException(500, "Ses şu anda üretilemedi")
 
 
 # ---------- Root ----------
@@ -620,13 +640,21 @@ async def root():
 
 app.include_router(api)
 app.include_router(gint.create_router(db, current_user))
+allowed_origins = configured_origins()
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=sorted(allowed_origins),
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Accept", "Authorization", "Content-Type", "X-CSRF-Token"],
 )
+app.add_middleware(BrowserSecurityMiddleware, session_secret=SESSION_SECRET, allowed_origins=allowed_origins)
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled server error path=%s type=%s", request.url.path, type(exc).__name__)
+    return JSONResponse(status_code=500, content={"detail": "Beklenmeyen sunucu hatası"})
 
 
 @app.on_event("shutdown")

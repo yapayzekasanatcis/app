@@ -70,8 +70,11 @@ def anon_client():
 @pytest.fixture
 def auth_client(test_session_cookie):
     s = requests.Session()
-    s.headers.update({"Content-Type": "application/json"})
+    s.headers.update({"Content-Type": "application/json", "Origin": BASE_URL})
     s.cookies.set("nova_session", test_session_cookie)
+    csrf = s.get(f"{BASE_URL}/api/auth/csrf", timeout=30)
+    assert csrf.status_code == 200, csrf.text
+    s.headers.update({"X-CSRF-Token": csrf.json()["csrf_token"]})
     return s
 
 

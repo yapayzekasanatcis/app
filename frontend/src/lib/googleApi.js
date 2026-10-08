@@ -2,7 +2,7 @@ import { api } from "@/lib/api";
 
 export const googleApi = {
   status: () => api.get("/google/status").then(r => r.data),
-  connect: () => api.get("/google/connect").then(r => r.data),
+  connect: () => api.post("/google/connect").then(r => r.data),
   disconnect: () => api.post("/google/disconnect").then(r => r.data),
   calendarToday: () => api.get("/google/calendar/today").then(r => r.data),
   calendarDate: (dateValue) => api.get("/google/calendar/date", { params: { date_value: dateValue } }).then(r => r.data),

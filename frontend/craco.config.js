@@ -11,6 +11,20 @@ const config = {
   enableHealthCheck: process.env.ENABLE_HEALTH_CHECK === "true",
 };
 
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'none'",
+  "form-action 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://assets.emergent.sh https://*.posthog.com https://ap.emergent.sh",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' data: https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https://*.googleusercontent.com https://*.posthog.com",
+  "connect-src 'self' https://ap.emergent.sh https://*.posthog.com wss:",
+  "media-src 'self' blob:",
+].join("; ");
+
 function makeDevServerV5Compatible(devServerConfig) {
   const {
     https,
@@ -30,6 +44,12 @@ function makeDevServerV5Compatible(devServerConfig) {
   compatibleConfig.headers = {
     ...compatibleConfig.headers,
     "Cross-Origin-Resource-Policy": "same-origin",
+    "Content-Security-Policy": contentSecurityPolicy,
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "camera=(), geolocation=(), microphone=(self)",
   };
 
   if (onBeforeSetupMiddleware || setupMiddlewares) {

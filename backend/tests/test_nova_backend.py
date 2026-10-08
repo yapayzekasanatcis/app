@@ -229,7 +229,11 @@ def test_logout_clears_session(base_url, mongo_db):
     token = URLSafeTimedSerializer(os.environ['SESSION_SECRET']).dumps(sid)
 
     s = requests.Session()
+    s.headers.update({"Origin": base_url})
     s.cookies.set("nova_session", token)
+    csrf = s.get(f"{base_url}/api/auth/csrf", timeout=30)
+    assert csrf.status_code == 200, csrf.text
+    s.headers.update({"X-CSRF-Token": csrf.json()["csrf_token"]})
     r = s.post(f"{base_url}/api/auth/logout")
     assert r.status_code == 200
     assert r.json().get("ok") is True

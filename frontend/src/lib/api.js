@@ -8,10 +8,64 @@ export const api = axios.create({
   withCredentials: true,
 });
 
+let csrfToken = null;
+let csrfPromise = null;
+const unsafeMethods = new Set(["post", "put", "patch", "delete"]);
+
+const clearCsrfToken = () => {
+  csrfToken = null;
+  csrfPromise = null;
+};
+
+const getCsrfToken = async () => {
+  if (csrfToken) return csrfToken;
+  if (!csrfPromise) {
+    csrfPromise = axios.get(`${API_BASE}/auth/csrf`, { withCredentials: true })
+      .then(response => {
+        csrfToken = response.data.csrf_token;
+        return csrfToken;
+      })
+      .finally(() => { csrfPromise = null; });
+  }
+  return csrfPromise;
+};
+
+api.interceptors.request.use(async config => {
+  const method = (config.method || "get").toLowerCase();
+  const isSessionExchange = String(config.url || "").endsWith("/auth/session");
+  if (unsafeMethods.has(method) && !isSessionExchange) {
+    config.headers = config.headers || {};
+    config.headers["X-CSRF-Token"] = await getCsrfToken();
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  response => response,
+  async error => {
+    const config = error.config;
+    const detail = error.response?.data?.detail;
+    if (error.response?.status === 401) clearCsrfToken();
+    if (error.response?.status === 403 && detail === "CSRF doğrulaması başarısız" && config && !config._csrfRetry) {
+      config._csrfRetry = true;
+      clearCsrfToken();
+      config.headers["X-CSRF-Token"] = await getCsrfToken();
+      return api.request(config);
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const authApi = {
   me: () => api.get("/auth/me").then(r => r.data),
-  session: (session_id) => api.post("/auth/session", { session_id }).then(r => r.data),
-  logout: () => api.post("/auth/logout").then(r => r.data),
+  session: async (session_id) => {
+    clearCsrfToken();
+    return api.post("/auth/session", { session_id }).then(r => r.data);
+  },
+  logout: async () => {
+    try { return await api.post("/auth/logout").then(r => r.data); }
+    finally { clearCsrfToken(); }
+  },
 };
 
 export const chatApi = {
