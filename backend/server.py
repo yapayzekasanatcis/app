@@ -4,6 +4,7 @@ import uuid
 import secrets
 import tempfile
 import logging
+import re
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional, Annotated, Literal
@@ -41,16 +42,26 @@ openai_client = AsyncOpenAI(
     api_key=EMERGENT_LLM_KEY,
     base_url="https://integrations.emergentagent.com/llm"
 )
-NOVA_TTS_VOICE = "marin"
-NOVA_TTS_SPEED = 1.08
+NOVA_TTS_PRIMARY_VOICE = "nova"
+NOVA_TTS_FALLBACK_VOICE = "marin"
+NOVA_TTS_SPEED = 1.09
 NOVA_TTS_STYLE = "female-executive-assistant-natural-tr"
 NOVA_TTS_INSTRUCTIONS = (
-    "Türkçe konuş. Belirgin şekilde kadın, 20’lerinin sonu ile 30’larının başında hissedilen, "
-    "orta perdeli, sıcak, zeki ve profesyonel bir yönetici asistanı gibi konuş. "
-    "Net ve doğal İstanbul Türkçesi kullan. Kalın, erkeksi, ağır, robotik, haber spikeri gibi "
-    "veya çocuksu olma. Akıcı konuş; cümle aralarında kısa ve doğal duraklamalar kullan, "
-    "gereksiz uzatma yapma."
+    "Doğal İstanbul Türkçesiyle konuş. Sıcak, zeki ve profesyonel bir kadın yönetici asistanı gibi duyul. "
+    "20’lerinin sonu ile 30’larının başında, orta perdeli bir ses kullan. Sakin ama akıcı konuş. "
+    "Haber spikeri gibi ağır, çocuksu, abartılı neşeli veya robotik olma. "
+    "Kelimeleri birbirinden koparma; cümle geçişlerini insan konuşması gibi bağla. "
+    "Cümle aralarında yalnızca kısa ve doğal duraklamalar kullan."
 )
+
+
+def prepare_tts_text(value: str) -> str:
+    """Reduce formatting pauses while preserving a single paragraph request."""
+    text = re.sub(r"\s*\n+\s*", ". ", value.strip())
+    text = re.sub(r"\s*[—–]\s*", ", ", text)
+    text = re.sub(r"\s*;\s*", ", ", text)
+    text = re.sub(r"([.!?])\1+", r"\1", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 app = FastAPI(title="NOVA ASİSTAN API")
 api = APIRouter(prefix="/api")
@@ -554,22 +565,39 @@ async def tts(text: str = Form(...), user: dict = Depends(current_user)):
     if not text.strip() or len(text) > 4000:
         raise HTTPException(400, "Metin boş veya çok uzun")
     try:
-        resp = await openai_client.audio.speech.create(
-            model="gpt-4o-mini-tts",
-            voice=NOVA_TTS_VOICE,
-            input=text,
-            instructions=NOVA_TTS_INSTRUCTIONS,
-            speed=NOVA_TTS_SPEED,
-            response_format="mp3"
-        )
+        prepared_text = prepare_tts_text(text)
+        voice_used = NOVA_TTS_PRIMARY_VOICE
+        try:
+            resp = await openai_client.audio.speech.create(
+                model="gpt-4o-mini-tts",
+                voice=voice_used,
+                input=prepared_text,
+                instructions=NOVA_TTS_INSTRUCTIONS,
+                speed=NOVA_TTS_SPEED,
+                response_format="mp3"
+            )
+        except Exception as primary_error:
+            logger.warning("Primary TTS voice failed; using marin fallback: %s", type(primary_error).__name__)
+            voice_used = NOVA_TTS_FALLBACK_VOICE
+            resp = await openai_client.audio.speech.create(
+                model="gpt-4o-mini-tts",
+                voice=voice_used,
+                input=prepared_text,
+                instructions=NOVA_TTS_INSTRUCTIONS,
+                speed=NOVA_TTS_SPEED,
+                response_format="mp3"
+            )
         audio_bytes = resp.read() if hasattr(resp, 'read') else resp.content
         return StreamingResponse(
             iter([audio_bytes]),
             media_type="audio/mpeg",
             headers={
-                "X-Nova-Voice": NOVA_TTS_VOICE,
+                "X-Nova-Voice": voice_used,
+                "X-Nova-Voice-Primary": NOVA_TTS_PRIMARY_VOICE,
+                "X-Nova-Voice-Fallback": NOVA_TTS_FALLBACK_VOICE,
                 "X-Nova-Voice-Speed": str(NOVA_TTS_SPEED),
                 "X-Nova-Voice-Style": NOVA_TTS_STYLE,
+                "X-Nova-TTS-Mode": "single-request",
             },
         )
     except Exception as e:

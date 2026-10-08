@@ -1,0 +1,40 @@
+{
+  "summary": "NOVA TTS natural-flow verification completed against requested marin fallback contract. Real /api/voice/tts call with signed temp session passed (HTTP 200, audio/mpeg, required headers, nontrivial MP3). Single-request full-paragraph path and nova->marin fallback behavior verified via code inspection and focused unit coverage.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_nova_tts_marin_contract.py",
+    "/app/backend/tests/test_nova_regression_real_data.py",
+    "/app/backend/tests/test_voice_real_e2e.py",
+    "/app/backend/server.py",
+    "/app/test_reports/pytest/pytest_results_iteration_10.xml"
+  ],
+  "action_items": [
+    "No blocking bug found for requested NOVA TTS flow; proceed with user UAT on cadence preference."
+  ],
+  "critical_code_review_comments": [
+    "Confirmed /api/voice/tts uses one audio.speech.create call in normal path with full prepared paragraph; no sentence/word chunk loop present.",
+    "Confirmed fallback is only triggered on primary exception and uses marin with same prepared input/instructions/speed.",
+    "prepare_tts_text contract for newline/dash/semicolon/repeated punctuation normalization validated with exact expected output."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_nova_tts_marin_contract.py",
+    "/app/test_reports/iteration_10.json"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 in mandatory suites)",
+    "frontend": "80% (login page load verified; full UI regression not in scope for this request)"
+  },
+  "seed_data_creation": "Only temporary signed nova_session rows created by pytest fixtures; temporary session and test conversation rows cleaned up in fixture teardown. No Google token mutation.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Mandatory suites executed: test_nova_tts_marin_contract.py, test_nova_regression_real_data.py, test_voice_real_e2e.py; all passed. New focused unit test added for speech.create call-count/order and prepare_tts_text exact transform.",
+  "rca of the issue": "Original complaint is perceptual prosody quality, not a transport/runtime defect. Implementation contract is correct: single full-paragraph request, reduced punctuation pauses, primary nova at speed 1.09, marin fallback only on failure."
+}
