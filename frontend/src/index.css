@@ -1,0 +1,164 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nova-bg: #0D0C0A;
+  --nova-bg-2: #161412;
+  --nova-bg-3: #211E1A;
+  --nova-text: #F4F1EA;
+  --nova-text-2: #A8A095;
+  --nova-text-3: #6E665B;
+  --nova-amber: #F59E0B;
+  --nova-amber-hover: #D97706;
+  --nova-amber-warm: #E5A93C;
+  --nova-glow: rgba(245, 158, 11, 0.25);
+  --nova-border: rgba(245, 158, 11, 0.15);
+}
+
+@layer base {
+  :root {
+    --background: 36 20% 5%;
+    --foreground: 44 29% 93%;
+    --card: 30 14% 9%;
+    --card-foreground: 44 29% 93%;
+    --popover: 30 14% 9%;
+    --popover-foreground: 44 29% 93%;
+    --primary: 38 92% 50%;
+    --primary-foreground: 36 20% 5%;
+    --secondary: 30 12% 13%;
+    --secondary-foreground: 44 29% 93%;
+    --muted: 30 12% 13%;
+    --muted-foreground: 36 10% 60%;
+    --accent: 38 92% 50%;
+    --accent-foreground: 36 20% 5%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 12% 18%;
+    --input: 30 12% 15%;
+    --ring: 38 92% 50%;
+    --radius: 0.75rem;
+  }
+  * { @apply border-border; }
+  body {
+    background-color: var(--nova-bg);
+    color: var(--nova-text);
+    font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  html, body, #root { min-height: 100vh; }
+}
+
+@layer components {
+  .font-serif-display {
+    font-family: 'Cormorant Garamond', ui-serif, Georgia, serif;
+    letter-spacing: -0.01em;
+  }
+  .font-mono-nova {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  .nova-glass {
+    background: rgba(22, 20, 18, 0.72);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--nova-border);
+  }
+  .nova-card {
+    background: var(--nova-bg-2);
+    border: 1px solid rgba(245, 158, 11, 0.08);
+    border-radius: 14px;
+  }
+  .nova-card:hover {
+    border-color: rgba(245, 158, 11, 0.22);
+  }
+  .nova-grain {
+    position: relative;
+  }
+  .nova-grain::after {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence baseFrequency='0.85' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    pointer-events: none;
+    opacity: 0.6;
+    mix-blend-mode: overlay;
+  }
+  .amber-glow {
+    box-shadow: 0 0 48px -8px var(--nova-glow);
+  }
+  .nova-dot {
+    width: 6px; height: 6px; border-radius: 999px; background: var(--nova-amber);
+    box-shadow: 0 0 10px var(--nova-amber);
+  }
+}
+
+/* NOVA Avatar Orb */
+.nova-orb {
+  position: relative;
+  width: 220px; height: 220px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #F59E0B 0%, #B4530A 40%, #4A1F02 70%, #140A02 100%);
+  box-shadow: 0 0 80px -10px rgba(245, 158, 11, 0.5), inset 0 0 60px -20px rgba(0,0,0,0.6);
+  transition: box-shadow 400ms ease, transform 400ms ease;
+}
+.nova-orb::before {
+  content: '';
+  position: absolute; inset: -30px;
+  border-radius: 50%;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  animation: orbRing 6s ease-in-out infinite;
+}
+.nova-orb::after {
+  content: '';
+  position: absolute; inset: -60px;
+  border-radius: 50%;
+  border: 1px solid rgba(245, 158, 11, 0.08);
+  animation: orbRing 8s ease-in-out infinite 1s;
+}
+@keyframes orbRing {
+  0%, 100% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+.nova-orb.idle { animation: orbBreath 4s ease-in-out infinite; }
+@keyframes orbBreath {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+}
+.nova-orb.listening {
+  box-shadow: 0 0 100px -5px rgba(239, 68, 68, 0.6), inset 0 0 60px -20px rgba(0,0,0,0.6);
+  animation: orbPulse 0.9s ease-in-out infinite;
+}
+@keyframes orbPulse {
+  0%, 100% { transform: scale(1.02); }
+  50% { transform: scale(1.08); }
+}
+.nova-orb.thinking {
+  animation: orbSpin 2s linear infinite, orbBreath 3s ease-in-out infinite;
+}
+@keyframes orbSpin {
+  from { filter: hue-rotate(0deg); }
+  to { filter: hue-rotate(20deg); }
+}
+.nova-orb.speaking {
+  box-shadow: 0 0 120px -5px rgba(245, 158, 11, 0.8), inset 0 0 60px -20px rgba(0,0,0,0.6);
+  animation: orbSpeak 0.45s ease-in-out infinite alternate;
+}
+@keyframes orbSpeak {
+  from { transform: scale(1.02); }
+  to { transform: scale(1.07); }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(245, 158, 11, 0.2); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(245, 158, 11, 0.35); }
+
+/* Selection */
+::selection { background: rgba(245, 158, 11, 0.4); color: #F4F1EA; }
+
+@layer base {
+  [data-debug-wrapper="true"] { display: contents !important; }
+}
