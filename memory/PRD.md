@@ -131,6 +131,8 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Güncel production revision `novaasistan.com` üzerinde doğrulandı; Login ekranında eski orb kaldırıldı, resmi 3:4 portre masaüstü 230×306.66 ve mobil 190×253.33 ölçülerinde yüklendi, orb sayısı 0 ve yatay taşma yok.
 - Gerçek production OAuth testi kullanıcı tarafından tamamlandı: farklı gerçek Gmail hesabı tam özel 403 mesajıyla reddedildi ve NOVA açılmadı; `yapayzekasanatcisi@gmail.com` başarıyla giriş yaptı ve gerçek NOVA verileri açıldı.
 - Production anonim kontrollerinde `/api/auth/me`, Workspace, Google Drive, Chat, TTS ve STT cookie olmadan 401 ile durdu; kod/preview bağımsız hardening regresyonu 8/8 geçti (`iteration_15.json`).
+- Son read-only production audit aktif run `54614e7e-ea06-457c-a231-a3e5153ffa9b` üzerinde geçti: users yalnız izinli hesap, `google_tokens` yalnız izinli owner, unauthorized session exchange sonrası hiçbir user/session/token/state artığı yok ve korumalı endpoint başarısı yok.
+- Audit anında logout/restart sonrası `sessions` koleksiyonu boştu; bu nedenle canlı bir dokümanda `auth_version=2` alanı post-hoc görülemedi. Version 2 yazımı kodda ve bağımsız testlerde doğrulandı; production gerçek login sonrası private istekler 200 geçti.
 
 ## Backlog (next phases)
 ### P0
