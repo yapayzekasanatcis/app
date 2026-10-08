@@ -125,6 +125,12 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Login ekranı backend 403 detayını `login-access-denied-alert` içinde masaüstü ve mobilde gösteriyor; yatay taşma yok.
 - Mevcut `google_tokens` sahipliği doğrulandı: tek token owner izinli hesaba bağlı; token değerleri okunmadı, yazdırılmadı veya değiştirilmedi.
 - Hedefli auth + güvenlik regresyonu bağımsız doğrulamada 21/21 geçti; frontend production build başarılı (`iteration_14.json`). Son self-test 5/5 geçti ve geçici auth test kayıtları temizlendi.
+- Production bypass sonrası allowlist email kodda sabitlendi, merkezi `SingleUserAuthorizationMiddleware` tüm private `/api` yüzeylerine eklendi ve `AUTH_SESSION_VERSION=2` ile eski cookie/session taşıma yolu kapatıldı.
+- Unauthorized `/api/auth/session` artık hiçbir user/session/cookie/token oluşturmadan 403 dönüyor ve tarayıcıdaki önceki `nova_session` cookie'sini expire ediyor; OAuth callback sırasında eski Bora oturumu frontend state'inden taşınmıyor.
+- Production startup enforcement çalıştı: 11 eski session ve 4 yetkisiz user temizlendi; izinli hesaba bağlı tek Google token kaydı korundu.
+- Güncel production revision `novaasistan.com` üzerinde doğrulandı; Login ekranında eski orb kaldırıldı, resmi 3:4 portre masaüstü 230×306.66 ve mobil 190×253.33 ölçülerinde yüklendi, orb sayısı 0 ve yatay taşma yok.
+- Gerçek production OAuth testi kullanıcı tarafından tamamlandı: farklı gerçek Gmail hesabı tam özel 403 mesajıyla reddedildi ve NOVA açılmadı; `yapayzekasanatcisi@gmail.com` başarıyla giriş yaptı ve gerçek NOVA verileri açıldı.
+- Production anonim kontrollerinde `/api/auth/me`, Workspace, Google Drive, Chat, TTS ve STT cookie olmadan 401 ile durdu; kod/preview bağımsız hardening regresyonu 8/8 geçti (`iteration_15.json`).
 
 ## Backlog (next phases)
 ### P0
