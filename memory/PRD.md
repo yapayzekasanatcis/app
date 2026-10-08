@@ -38,14 +38,15 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - `NOVA İş Merkezi` ve İşler/Projeler/Rutinler sekmeleri için gerçek okuma doğrulama endpoint'i ve Ayarlar sonuç ekranı eklendi.
 - Günlük brifing ve Bugün ekranındaki kodla üretilen Komagene/özel gün rutinleri kaldırıldı; rutinler yalnızca gerçek Sheets/Docs verisinden okunuyor.
 - Backend regresyon testleri seri çalışmada 20/20 geçti; frontend üretim derlemesi geçti; masaüstü ve 390px mobil görünümde yatay taşma yok.
-- P0 blokajı: Çalışan preview ortamı `GOOGLE_CLIENT_SECRET` değerini Client ID ile aynı görüyor. Bu nedenle OAuth bilinçli olarak başlatılmıyor; gerçek Google consent/token ve veri testi henüz tamamlanmadı.
+- OAuth PKCE `code_verifier` state kaydına bağlı ve şifreli saklanarak token exchange düzeltildi; gerçek Google token endpoint yanıtı HTTP 200 ile tamamlandı.
+- OAuth callback access loglarında authorization code, state, token ve client secret alanları redakte ediliyor.
+- Google Calendar UTC (`17:00Z`) etkinlik saatleri `Europe/Istanbul` saat dilimine normalize edildi; sorgu `timeZone=Europe/Istanbul`, `singleEvents=true`, `orderBy=startTime` kullanıyor.
+- Gerçek Calendar doğrulaması geçti: `NOVA ASİSTAN — Özel Takvim`, 8 Ekim 2026 20:00–22:00, `Sezon Açılış Konseri — Bursa Bölge Devlet Senfoni Orkestrası`, Merinos AKKM Osmangazi Salonu.
+- Gerçek Sheets doğrulaması geçti: `NOVA İş Merkezi` içinde İşler 4, Projeler 6, Rutinler 15 satır okunabildi.
+- Bağımsız kritik retest: backend 4/4 ve Ayarlar Google doğrulama akışı %100 geçti (`iteration_2.json`).
 
 ## Backlog (next phases)
 ### P0
-- Preview çalışma ortamına doğru `GOOGLE_CLIENT_SECRET` değerinin yansımasını sağla.
-- Kullanıcının Ayarlar > Google'ı Bağla akışında consent vermesini tamamla.
-- Gerçek veri doğrulamasında 8 Ekim 2026 20:00 Bursa Bölge Devlet Senfoni Orkestrası etkinliğini doğrula.
-- `NOVA İş Merkezi` İşler / Projeler / Rutinler sekmelerinin gerçek satır sayılarını doğrula.
 - Google Drive/Docs (`NOVA ASİSTAN` klasörü ve çekirdek doküman) gerçek okuma testi.
 - Gmail entegrasyonu
 

@@ -1,7 +1,9 @@
 """Google OAuth 2.0 + Calendar/Sheets/Drive/Docs read integration."""
+import logging
 import os
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -12,6 +14,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+logger = logging.getLogger("nova.google")
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
@@ -35,6 +39,32 @@ CALENDAR_NAME = "NOVA ASİSTAN — Özel Takvim"
 SHEET_NAME = "NOVA İş Merkezi"
 DRIVE_FOLDER_NAME = "NOVA ASİSTAN"
 DOC_NAME = "NOVA ASİSTAN — Çekirdek Kurallar ve Rutinler"
+ISTANBUL_TZ = ZoneInfo("Europe/Istanbul")
+EXPECTED_CALENDAR_EVENT_TITLE = "Sezon Açılış Konseri — Bursa Bölge Devlet Senfoni Orkestrası"
+EXPECTED_CALENDAR_EVENT_LOCATION = "Merinos AKKM Osmangazi Salonu"
+
+
+class OAuthAccessLogFilter(logging.Filter):
+    """Keep authorization codes and OAuth state out of access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not isinstance(record.args, tuple) or len(record.args) < 3:
+            return True
+        path = record.args[2]
+        if not isinstance(path, str) or "/api/google/callback?" not in path:
+            return True
+        parts = urlsplit(path)
+        redacted = []
+        sensitive = {"code", "state", "access_token", "refresh_token", "client_secret"}
+        for key, value in parse_qsl(parts.query, keep_blank_values=True):
+            redacted.append((key, "[REDACTED]" if key in sensitive else value))
+        args = list(record.args)
+        args[2] = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(redacted), parts.fragment))
+        record.args = tuple(args)
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(OAuthAccessLogFilter())
 
 
 def is_configured() -> bool:
@@ -81,6 +111,27 @@ def new_flow(state: Optional[str] = None) -> Flow:
     flow = Flow.from_client_config(client_config(), scopes=SCOPES, state=state)
     flow.redirect_uri = GOOGLE_REDIRECT_URI
     return flow
+
+
+def audit_token_response(response, audit: dict):
+    """Capture only safe diagnostic fields from Google's token response."""
+    try:
+        payload = response.json()
+    except Exception:
+        payload = {}
+    audit.update({
+        "http_status": response.status_code,
+        "error": str(payload.get("error") or ""),
+        "error_description": str(payload.get("error_description") or ""),
+    })
+    log_method = logger.error if response.status_code >= 400 else logger.info
+    log_method(
+        "Google token endpoint response http_status=%s error=%r error_description=%r",
+        audit["http_status"],
+        audit["error"][:120],
+        audit["error_description"][:500],
+    )
+    return response
 
 
 def seal(value: Optional[str]) -> Optional[str]:
@@ -158,7 +209,11 @@ async def is_connected(db, user_id: str) -> bool:
 def _find_named_calendar(cal) -> Optional[dict]:
     page_token = None
     while True:
-        result = _http(cal.calendarList().list(maxResults=250, pageToken=page_token))
+        result = _http(cal.calendarList().list(
+            maxResults=250,
+            pageToken=page_token,
+            showHidden=True,
+        ))
         match = next((item for item in result.get("items", []) if item.get("summary") == CALENDAR_NAME), None)
         if match:
             return match
@@ -167,23 +222,29 @@ def _find_named_calendar(cal) -> Optional[dict]:
             return None
 
 
+def _to_istanbul_iso(value: Optional[str]) -> Optional[str]:
+    if not value or "T" not in value:
+        return value
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return parsed.astimezone(ISTANBUL_TZ).isoformat()
+
+
 async def get_calendar_events_for_date(db, user_id: str, target_date: date) -> list:
     """Return a named NOVA calendar's events for one Istanbul calendar day."""
     creds = await credentials_for(db, user_id)
     cal = _service("calendar", "v3", creds)
     match = _find_named_calendar(cal)
-    if not match:
-        raise HTTPException(404, f"'{CALENDAR_NAME}' takvimi bulunamadı")
-    calendar_id = match["id"]
+    calendar_id = match["id"] if match else "primary"
+    calendar_name = match["summary"] if match else "primary"
 
-    istanbul = ZoneInfo("Europe/Istanbul")
-    day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=istanbul)
+    day_start = datetime.combine(target_date, datetime.min.time(), tzinfo=ISTANBUL_TZ)
     day_end = day_start + timedelta(days=1)
 
     ev = _http(cal.events().list(
         calendarId=calendar_id,
         singleEvents=True, orderBy="startTime",
         timeMin=day_start.isoformat(), timeMax=day_end.isoformat(),
+        timeZone="Europe/Istanbul",
         maxResults=50,
         fields="items(id,summary,description,start,end,location,status,htmlLink)"
     ))
@@ -196,16 +257,16 @@ async def get_calendar_events_for_date(db, user_id: str, target_date: date) -> l
             "title": item.get("summary", "(başlıksız)"),
             "description": item.get("description", ""),
             "location": item.get("location", ""),
-            "start": start,
-            "end": end,
+            "start": _to_istanbul_iso(start),
+            "end": _to_istanbul_iso(end),
             "link": item.get("htmlLink"),
-            "calendar": match["summary"],
+            "calendar": calendar_name,
         })
     return out
 
 
 async def get_todays_calendar_events(db, user_id: str) -> list:
-    local_today = datetime.now(ZoneInfo("Europe/Istanbul")).date()
+    local_today = datetime.now(ISTANBUL_TZ).date()
     return await get_calendar_events_for_date(db, user_id, local_today)
 
 
@@ -296,6 +357,7 @@ def create_router(db, current_user):
         await db.google_oauth_states.insert_one({
             "state": state,
             "user_id": user["id"],
+            "code_verifier": seal(flow.code_verifier),
             "created_at": datetime.now(timezone.utc).isoformat(),
         })
         return {"url": url}
@@ -320,11 +382,39 @@ def create_router(db, current_user):
             raise HTTPException(400, "OAuth isteğinin süresi doldu")
         await db.google_oauth_states.delete_one({"state": state_q})
 
+        code_verifier = unseal(state_doc.get("code_verifier"))
+        if not code_verifier:
+            logger.error("Google token exchange blocked: PKCE code_verifier missing for OAuth state")
+            return RedirectResponse(f"{FRONTEND_URL}/ayarlar?google_error=pkce_verifier_missing")
+
         flow = new_flow(state=state_q)
+        flow.code_verifier = code_verifier
+        token_audit = {}
+        flow.oauth2session.register_compliance_hook(
+            "access_token_response",
+            lambda response: audit_token_response(response, token_audit),
+        )
         try:
             authorization_response = f"{GOOGLE_REDIRECT_URI}?{request.url.query}"
             flow.fetch_token(authorization_response=authorization_response)
-        except Exception as e:
+        except Exception as exc:
+            safe_failure = {
+                "user_id": user_id,
+                "http_status": token_audit.get("http_status"),
+                "error": token_audit.get("error") or type(exc).__name__,
+                "error_description": token_audit.get("error_description") or str(exc)[:500],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await db.google_oauth_failures.replace_one(
+                {"user_id": user_id}, safe_failure, upsert=True
+            )
+            logger.error(
+                "Google token exchange failed http_status=%s error=%r error_description=%r exception_type=%s",
+                safe_failure["http_status"],
+                safe_failure["error"][:120],
+                safe_failure["error_description"][:500],
+                type(exc).__name__,
+            )
             return RedirectResponse(f"{FRONTEND_URL}/ayarlar?google_error=token_exchange_failed")
         creds = flow.credentials
         if not creds.refresh_token:
@@ -348,6 +438,7 @@ def create_router(db, current_user):
             },
             upsert=True,
         )
+        await db.google_oauth_failures.delete_one({"user_id": user_id})
         return RedirectResponse(f"{FRONTEND_URL}/ayarlar?google=connected")
 
     @router.post("/disconnect")
@@ -390,8 +481,11 @@ def create_router(db, current_user):
         events = await get_calendar_events_for_date(db, user["id"], target_date)
         target_events = [
             event for event in events
-            if "Bursa Bölge Devlet Senfoni Orkestrası" in event.get("title", "")
-            and "T20:00" in event.get("start", "")
+            if event.get("calendar") == CALENDAR_NAME
+            and event.get("title") == EXPECTED_CALENDAR_EVENT_TITLE
+            and event.get("start", "").startswith("2026-10-08T20:00:00+03:00")
+            and event.get("end", "").startswith("2026-10-08T22:00:00+03:00")
+            and EXPECTED_CALENDAR_EVENT_LOCATION in event.get("location", "")
         ]
         sheet = await get_sheet_data(db, user["id"])
         if sheet is None:
