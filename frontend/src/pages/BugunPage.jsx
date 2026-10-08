@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
-import { briefingApi, tasksApi, eventsApi } from "@/lib/api";
+import { briefingApi } from "@/lib/api";
 import { toast } from "sonner";
 import { Clock, Flag, Volume2, Loader2, Link2, CalendarCheck } from "lucide-react";
 import { voiceApi } from "@/lib/api";
 import { useOutletContext, Link } from "react-router-dom";
+import { useWorkspaceData } from "@/context/WorkspaceDataContext";
 
 export default function BugunPage() {
   const [briefing, setBriefing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [playing, setPlaying] = useState(false);
   const { setNovaState } = useOutletContext();
+  const { data: workspace } = useWorkspaceData();
+  const todayEvents = workspace?.today_events || [];
+  const priorities = workspace?.priorities || [];
 
   useEffect(() => {
     briefingApi.today()
@@ -80,17 +84,17 @@ export default function BugunPage() {
             <Flag className="h-4 w-4 text-[color:var(--nova-amber)]" />
             <div className="font-mono-nova text-xs uppercase tracking-widest text-[color:var(--nova-text-3)]">Günün 3 Önceliği</div>
           </div>
-          {briefing?.priorities?.length ? (
+          {priorities.length ? (
             <ul className="space-y-2">
-              {briefing.priorities.slice(0, 3).map(p => (
-                <li key={p.id} className="flex items-start gap-3 text-sm">
+              {priorities.slice(0, 3).map(p => (
+                <li key={p.id} className="flex items-start gap-3 text-sm" data-testid={`today-priority-${p.id}`}>
                   <span className="nova-dot mt-2" />
                   <span className="text-[color:var(--nova-text)]">{p.title}</span>
                 </li>
               ))}
             </ul>
           ) : (
-            <div className="text-sm text-[color:var(--nova-text-3)]">Henüz öncelik belirlenmedi. Bekleyen İşler'den işaretleyebilirsiniz.</div>
+            <div className="text-sm text-[color:var(--nova-text-3)]">NOVA İş Merkezi'nde öncelik üretilecek aktif kayıt yok.</div>
           )}
         </div>
 
@@ -99,16 +103,16 @@ export default function BugunPage() {
             <Clock className="h-4 w-4 text-[color:var(--nova-amber)]" />
             <div className="font-mono-nova text-xs uppercase tracking-widest text-[color:var(--nova-text-3)]">Bugünkü Takvim</div>
           </div>
-          {briefing?.google_events?.length > 0 && (
+          {todayEvents.length > 0 && (
             <div className="mb-3">
               <div className="font-mono-nova text-[10px] uppercase tracking-widest text-emerald-400 mb-2 flex items-center gap-1">
                 <CalendarCheck className="h-3 w-3" /> Google Takvim
               </div>
               <ul className="space-y-2.5">
-                {briefing.google_events.map(e => (
+                {todayEvents.map(e => (
                   <li key={e.id} className="flex items-start gap-3 text-sm" data-testid={`google-event-${e.id}`}>
                     <span className="font-mono-nova text-xs text-[color:var(--nova-amber)] w-14 pt-0.5">
-                      {e.start?.includes("T") ? e.start.slice(11, 16) : "Tüm gün"}
+                      {e.start_time?.includes("T") ? e.start_time.slice(11, 16) : "Tüm gün"}
                     </span>
                     <div>
                       <div className="text-[color:var(--nova-text)]">{e.title}</div>
@@ -119,38 +123,18 @@ export default function BugunPage() {
               </ul>
             </div>
           )}
-          {briefing?.events?.length > 0 && (
-            <div>
-              {briefing?.google_events?.length > 0 && (
-                <div className="font-mono-nova text-[10px] uppercase tracking-widest text-[color:var(--nova-text-3)] mb-2">Yerel</div>
-              )}
-              <ul className="space-y-2.5">
-                {briefing.events.map(e => (
-                  <li key={e.id} className="flex items-start gap-3 text-sm">
-                    <span className="font-mono-nova text-xs text-[color:var(--nova-amber)] w-14 pt-0.5">
-                      {e.start_time?.slice(11, 16)}
-                    </span>
-                    <div>
-                      <div className="text-[color:var(--nova-text)]">{e.title}</div>
-                      {e.location && <div className="text-xs text-[color:var(--nova-text-3)]">{e.location}</div>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {(!briefing?.events?.length && !briefing?.google_events?.length) && (
+          {!todayEvents.length && (
             <div className="text-sm text-[color:var(--nova-text-3)]">
-              {briefing?.google_connected
+              {workspace?.sources?.calendar?.connected
                 ? "Bugün Google Takvim'de etkinlik yok."
-                : "Google Takvim bağlı değil. Yerel takvimde de kayıt yok."}
+                : "Google Takvim verisi şu anda alınamıyor."}
             </div>
           )}
         </div>
       </div>
 
       {/* Google connection banner */}
-      {briefing && !briefing.google_connected && (
+      {workspace && !workspace.sources?.calendar?.connected && (
         <div className="nova-card p-5 border-[color:var(--nova-amber)]/40" data-testid="google-connect-banner">
           <div className="flex items-start gap-3 flex-wrap">
             <Link2 className="h-5 w-5 text-[color:var(--nova-amber)] mt-0.5" />

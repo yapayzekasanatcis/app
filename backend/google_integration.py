@@ -285,7 +285,7 @@ async def get_calendar_events_for_range(db, user_id: str, start_date: date, end_
         singleEvents=True, orderBy="startTime",
         timeMin=day_start.isoformat(), timeMax=day_end.isoformat(),
         timeZone="Europe/Istanbul",
-        maxResults=50,
+        maxResults=250,
         fields="items(id,summary,description,start,end,location,status,htmlLink)"
     ))
     out = []

@@ -78,7 +78,7 @@ export default function NotlarPage() {
                       {new Date(n.created_at).toLocaleString("tr-TR")}
                     </div>
                   </div>
-                  <button onClick={() => remove(n.id)} className="text-[color:var(--nova-text-3)] hover:text-red-400 transition-colors"><Trash2 className="h-4 w-4" /></button>
+                  <button data-testid={`note-delete-button-${n.id}`} onClick={() => remove(n.id)} className="text-[color:var(--nova-text-3)] hover:text-red-400 transition-colors"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
             ))}

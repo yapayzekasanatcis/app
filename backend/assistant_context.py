@@ -7,6 +7,7 @@ from typing import Optional
 import google_integration as gint
 from date_resolver import fold_turkish, resolve_requested_date
 from rapidfuzz import fuzz
+from workspace_data import load_workspace_source, rows_to_dicts
 
 
 TR_MONTHS = [
@@ -65,16 +66,6 @@ def _semantic_intent(folded: str) -> Optional[str]:
     ):
         return "today_schedule"
     return None
-
-
-def rows_to_dicts(rows: list) -> list[dict]:
-    if len(rows) < 2:
-        return []
-    headers = rows[0]
-    return [
-        {header: row[index] if index < len(row) else "" for index, header in enumerate(headers)}
-        for row in rows[1:]
-    ]
 
 
 def classify_intent(message: str, today: datetime) -> tuple[str, Optional[date]]:
@@ -335,26 +326,21 @@ async def build_chat_package(db, user_id: str, message: str, intent_override: Op
     if intent_override:
         intent = intent_override
         target_date = now.date() if intent in {"briefing", "today_schedule"} else target_date
-    sheet, sheet_ok = None, True
-    try:
-        sheet = await gint.get_sheet_data(db, user_id)
-    except Exception:
-        sheet_ok = False
+    if intent in {"weekly_priorities", "weekly_routines", "week_overview"}:
+        query_start = now.date() - timedelta(days=now.weekday())
+        query_end = query_start + timedelta(days=7)
+    else:
+        query_start = target_date or now.date()
+        query_end = query_start + timedelta(days=1)
+    source = await load_workspace_source(db, user_id, query_start, query_end)
+    sheet = source["sheet"]
+    sheet_ok = source["sheet_ok"]
     tasks = rows_to_dicts(sheet.get("İşler", [])) if sheet else []
     projects = rows_to_dicts(sheet.get("Projeler", [])) if sheet else []
     routines = rows_to_dicts(sheet.get("Rutinler", [])) if sheet else []
 
-    events, calendar_ok = [], True
-    try:
-        if intent in {"weekly_priorities", "weekly_routines", "week_overview"}:
-            week_start = now.date() - timedelta(days=now.weekday())
-            week_end = week_start + timedelta(days=7)
-            events = await gint.get_calendar_events_for_range(db, user_id, week_start, week_end)
-        else:
-            query_date = target_date or now.date()
-            events = await gint.get_calendar_events_for_date(db, user_id, query_date)
-    except Exception:
-        calendar_ok = False
+    events = source["events"]
+    calendar_ok = source["calendar_ok"]
 
     core_doc = None
     if not calendar_ok and not sheet_ok:

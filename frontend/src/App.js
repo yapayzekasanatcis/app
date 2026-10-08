@@ -2,6 +2,7 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth, AuthProvider } from "@/context/AuthContext";
 import { Toaster } from "sonner";
+import { WorkspaceDataProvider } from "@/context/WorkspaceDataContext";
 
 import LoginPage from "@/pages/LoginPage";
 import Layout from "@/components/Layout";
@@ -44,7 +45,7 @@ function App() {
         />
         <Routes>
           <Route path="/giris" element={<LoginPage />} />
-          <Route path="/" element={<Protected><Layout /></Protected>}>
+          <Route path="/" element={<Protected><WorkspaceDataProvider><Layout /></WorkspaceDataProvider></Protected>}>
             <Route index element={<BugunPage />} />
             <Route path="yarin" element={<YarinPage />} />
             <Route path="bu-hafta" element={<BuHaftaPage />} />

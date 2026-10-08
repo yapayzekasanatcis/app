@@ -25,6 +25,10 @@ export const briefingApi = {
   today: () => api.get("/briefing/today").then(r => r.data),
 };
 
+export const workspaceApi = {
+  snapshot: () => api.get("/workspace/snapshot").then(r => r.data),
+};
+
 export const tasksApi = {
   list: (params = {}) => api.get("/tasks", { params }).then(r => r.data),
   create: (data) => api.post("/tasks", data).then(r => r.data),

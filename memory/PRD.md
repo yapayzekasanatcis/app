@@ -87,6 +87,17 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Hazır, Dinliyor, Düşünüyor ve Konuşuyor state'leri portre çerçevesindeki sakin/pulse/ring/yumuşak animasyonlarla korunuyor.
 - Bağımsız UI testi: frontend build, asset serve, masaüstü 1920×800 ve mobil 390×844 ana ekran/Ayarlar görünümleri %100 geçti; yatay taşma ve crop bozulması yok (`iteration_9.json`).
 
+## Shared Google Workspace Page Data Layer (2026-10-08)
+- Menü sayfalarının local Mongo `/tasks` ve `/events` bağımlılığı kaldırıldı; chat ve tüm ekranlar aynı `/backend/workspace_data.py` kaynağını kullanıyor.
+- `GET /api/workspace/snapshot` Calendar ve Sheets verilerini bir kez okuyup normalize ediyor: bugün, yarın, hafta, takvim, bekleyen işler, öncelikler ve bağlam görünümleri tek sözleşmeden dönüyor.
+- Frontend `WorkspaceDataProvider`, authenticated Layout üzerinde tek snapshot'ı paylaşarak SPA rota değişimlerinde sayfa bazlı veri mantığını kaldırıyor.
+- Bugün/Yarın/Bu Hafta/Takvim `NOVA ASİSTAN — Özel Takvim`; Bekleyen İşler/Öncelikler `NOVA İş Merkezi` İşler+Projeler kaynaklarına geçti.
+- Komagene aktif Rutinler; Tiyatral Nikâh gerçek Calendar nikâhları + ilgili bekleyen İşler; Bora AI Stüdyo aktif/bekleyen Projeler verilerini gösteriyor.
+- Kişisel yalnız gerçek Google Workspace kategorili kayıtlarını gösteriyor; Hızlı Notlar local CRUD olarak korundu.
+- Gerçek veri doğrulaması: 8 Ekim 20:00 konseri Bugün/Takvim/Bu Hafta; 11 Ekim Villa Verde Bu Hafta/Tiyatral; Alanya-Antalya işleri; Komagene sipariş/sevkiyat rutinleri; Grup Karadüş ve Kadına Şiddet projeleri tüm ilgili rotalarda görüldü.
+- Bağımsız backend snapshot testi ve masaüstü 1920×800/mobil 390×844 SPA testi %100 geçti (`iteration_11.json`); sayfalarda `/api/tasks` veya `/api/events` isteği yok, production API mocked değil.
+- Son regresyon: backend 46/46, frontend production build başarılı; geçici test session kalıntısı yok.
+
 ## Backlog (next phases)
 ### P0
 - Gmail entegrasyonu

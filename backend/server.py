@@ -26,6 +26,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import google_integration as gint
 from assistant_context import build_chat_package
+from workspace_data import build_workspace_snapshot
 
 EMERGENT_LLM_KEY = os.environ['EMERGENT_LLM_KEY']
 SESSION_SECRET = os.environ['SESSION_SECRET']
@@ -444,6 +445,12 @@ async def briefing_today(user: Annotated[dict, Depends(current_user)]):
         "pending_count": package.get("pending_count", 0) if "package" in locals() else 0,
         "date": today.strftime("%d %B %Y, %A"),
     }
+
+
+@api.get("/workspace/snapshot")
+async def workspace_snapshot(user: Annotated[dict, Depends(current_user)]):
+    """Single normalized Google Calendar/Sheets view model for every app page."""
+    return await build_workspace_snapshot(db, user["id"])
 
 
 # ---------- Tasks CRUD ----------
