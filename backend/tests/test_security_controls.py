@@ -45,6 +45,7 @@ def security_client(db):
     db.sessions.insert_one({
         "session_id": session_id,
         "user_id": TEST_USER_ID,
+        "auth_version": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": "pytest-security-controls",
     })

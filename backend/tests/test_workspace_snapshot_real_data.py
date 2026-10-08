@@ -56,6 +56,7 @@ def temp_real_user_session(mongo_db):
     mongo_db.sessions.insert_one({
         "session_id": sid,
         "user_id": user["id"],
+        "auth_version": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": "pytest-workspace-snapshot-real",
     })

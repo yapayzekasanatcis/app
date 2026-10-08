@@ -14,7 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 SESSION_MAX_AGE = 60 * 60 * 24 * 7
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-CSRF_EXEMPT_PATHS = {"/api/auth/session"}
+CSRF_EXEMPT_PATHS = {"/api/auth/session", "/api/auth/logout"}
 RATE_LIMITS = {
     "/api/chat": (30, 60),
     "/api/voice/tts": (20, 60),

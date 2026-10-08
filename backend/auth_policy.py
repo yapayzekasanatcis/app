@@ -1,6 +1,4 @@
 """Single-user authorization policy for NOVA."""
-import os
-
 from fastapi import HTTPException
 
 
@@ -8,10 +6,8 @@ UNAUTHORIZED_MESSAGE = (
     "NOVA, Yapay Zeka Sanatçısı Bora ÜNSAL’a özel kişisel asistandır. "
     "Yetkisiz erişim reddedildi."
 )
-ALLOWED_USER_EMAIL = os.environ["ALLOWED_USER_EMAIL"].strip().casefold()
-
-if not ALLOWED_USER_EMAIL or "@" not in ALLOWED_USER_EMAIL:
-    raise RuntimeError("ALLOWED_USER_EMAIL geçerli bir email adresi olmalı")
+ALLOWED_USER_EMAIL = "yapayzekasanatcisi@gmail.com"
+AUTH_SESSION_VERSION = 2
 
 
 def normalize_email(value) -> str:

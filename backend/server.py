@@ -25,7 +25,8 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 import google_integration as gint
-from auth_policy import require_allowed_identity
+from auth_middleware import SingleUserAuthorizationMiddleware
+from auth_policy import ALLOWED_USER_EMAIL, AUTH_SESSION_VERSION, require_allowed_identity
 from assistant_context import build_chat_package
 from workspace_data import build_workspace_snapshot
 from security import BrowserSecurityMiddleware, configured_origins, csrf_token_for_request
@@ -154,7 +155,7 @@ class Event(EventIn):
 
 
 # ---------- Auth helpers ----------
-async def current_user(request: Request) -> dict:
+async def load_current_user(request: Request) -> dict:
     token = request.cookies.get("nova_session")
     if not token:
         raise HTTPException(401, "Giriş gerekli")
@@ -165,6 +166,9 @@ async def current_user(request: Request) -> dict:
     sess = await db.sessions.find_one({"session_id": sid}, {"_id": 0})
     if not sess:
         raise HTTPException(401, "Oturum bulunamadı")
+    if sess.get("auth_version") != AUTH_SESSION_VERSION:
+        await db.sessions.delete_one({"session_id": sid})
+        raise HTTPException(401, "Oturum yenilenmeli")
     user = await db.users.find_one({"id": sess["user_id"]}, {"_id": 0})
     if not user:
         raise HTTPException(401, "Kullanıcı bulunamadı")
@@ -174,6 +178,13 @@ async def current_user(request: Request) -> dict:
         await db.sessions.delete_one({"session_id": sid})
         raise
     return user
+
+
+async def current_user(request: Request) -> dict:
+    authorized_user = getattr(request.state, "authorized_user", None)
+    if authorized_user:
+        return authorized_user
+    return await load_current_user(request)
 
 
 # ---------- Auth routes ----------
@@ -189,7 +200,12 @@ async def auth_session(payload: SessionExchange, response: Response):
         raise HTTPException(401, "Google oturumu doğrulanamadı")
     data = r.json()
 
-    email = require_allowed_identity(data)
+    try:
+        email = require_allowed_identity(data)
+    except HTTPException as exc:
+        denied = JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+        denied.delete_cookie("nova_session", path="/", samesite="lax", secure=True)
+        return denied
     user_id = data.get("id") or data.get("email")
     user_doc = {
         "id": user_id,
@@ -205,6 +221,7 @@ async def auth_session(payload: SessionExchange, response: Response):
     await db.sessions.insert_one({
         "session_id": local_sid,
         "user_id": user_id,
+        "auth_version": AUTH_SESSION_VERSION,
         "created_at": now_iso(),
     })
     token = serializer.dumps(local_sid)
@@ -656,6 +673,7 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Accept", "Authorization", "Content-Type", "X-CSRF-Token"],
 )
+app.add_middleware(SingleUserAuthorizationMiddleware, current_user_loader=load_current_user)
 app.add_middleware(BrowserSecurityMiddleware, session_secret=SESSION_SECRET, allowed_origins=allowed_origins)
 
 
@@ -663,6 +681,38 @@ app.add_middleware(BrowserSecurityMiddleware, session_secret=SESSION_SECRET, all
 async def generic_exception_handler(request: Request, exc: Exception):
     logger.error("Unhandled server error path=%s type=%s", request.url.path, type(exc).__name__)
     return JSONResponse(status_code=500, content={"detail": "Beklenmeyen sunucu hatası"})
+
+
+@app.on_event("startup")
+async def enforce_single_user_store():
+    users = await db.users.find({}, {"_id": 0, "id": 1, "email": 1}).to_list(10000)
+    allowed_user_ids = [
+        user["id"]
+        for user in users
+        if user.get("id") and str(user.get("email", "")).strip().casefold() == ALLOWED_USER_EMAIL
+    ]
+    unauthorized_user_ids = [
+        user["id"] for user in users if user.get("id") and user["id"] not in allowed_user_ids
+    ]
+
+    sessions = await db.sessions.delete_many({
+        "$or": [
+            {"auth_version": {"$ne": AUTH_SESSION_VERSION}},
+            {"user_id": {"$nin": allowed_user_ids}},
+        ]
+    })
+    tokens = await db.google_tokens.delete_many({"user_id": {"$nin": allowed_user_ids}})
+    await db.google_oauth_states.delete_many({})
+    users_deleted = 0
+    if unauthorized_user_ids:
+        result = await db.users.delete_many({"id": {"$in": unauthorized_user_ids}})
+        users_deleted = result.deleted_count
+    logger.warning(
+        "Single-user startup enforcement sessions_deleted=%s users_deleted=%s tokens_deleted=%s",
+        sessions.deleted_count,
+        users_deleted,
+        tokens.deleted_count,
+    )
 
 
 @app.on_event("shutdown")

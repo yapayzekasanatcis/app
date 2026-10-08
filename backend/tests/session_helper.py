@@ -34,6 +34,7 @@ def create_temp_session():
     db.sessions.insert_one({
         "session_id": sid,
         "user_id": user["id"],
+        "auth_version": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": "ui-test-session-helper",
     })

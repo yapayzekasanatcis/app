@@ -53,6 +53,7 @@ def test_session_cookie(mongo_db):
     mongo_db.sessions.insert_one({
         "session_id": sid,
         "user_id": TEST_USER_ID,
+        "auth_version": 2,
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
     token = URLSafeTimedSerializer(os.environ['SESSION_SECRET']).dumps(sid)

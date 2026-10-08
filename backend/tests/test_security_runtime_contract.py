@@ -48,6 +48,7 @@ def auth_csrf_client(db):
         {
             "session_id": session_id,
             "user_id": TEST_USER_ID,
+            "auth_version": 2,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "source": "pytest-security-runtime-contract",
         }

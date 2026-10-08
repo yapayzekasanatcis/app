@@ -18,7 +18,14 @@ export function AuthProvider({ children }) {
     }
   };
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    if (window.location.hash?.includes("session_id=")) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
+    refresh();
+  }, []);
 
   const logout = async () => {
     await authApi.logout();

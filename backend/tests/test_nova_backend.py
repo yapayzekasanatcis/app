@@ -226,7 +226,7 @@ def test_logout_clears_session(base_url, mongo_db):
         {"$set": {"id": "TEST_bora_logout", "email": os.environ["ALLOWED_USER_EMAIL"], "name": "LO"}},
         upsert=True,
     )
-    mongo_db.sessions.insert_one({"session_id": sid, "user_id": "TEST_bora_logout", "created_at": datetime.now(timezone.utc).isoformat()})
+    mongo_db.sessions.insert_one({"session_id": sid, "user_id": "TEST_bora_logout", "auth_version": 2, "created_at": datetime.now(timezone.utc).isoformat()})
     token = URLSafeTimedSerializer(os.environ['SESSION_SECRET']).dumps(sid)
 
     s = requests.Session()

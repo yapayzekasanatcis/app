@@ -13,7 +13,7 @@ import httpx
 import pytest
 import requests
 from dotenv import load_dotenv
-from fastapi import HTTPException, Response
+from fastapi import Response
 from itsdangerous import URLSafeTimedSerializer
 from pymongo import MongoClient
 
@@ -103,6 +103,7 @@ def test_allowed_google_account_completes_local_session(monkeypatch):
     assert result["email"] == ALLOWED_USER_EMAIL
     assert fake_db.users.rows[0]["email_verified"] is True
     assert len(fake_db.sessions.rows) == 1
+    assert fake_db.sessions.rows[0]["auth_version"] == 2
     cookie = SimpleCookie()
     cookie.load(response.headers["set-cookie"])
     signed = cookie["nova_session"].value
@@ -122,11 +123,12 @@ def test_other_or_unverified_google_account_is_rejected_before_session(monkeypat
     monkeypatch.setattr(server, "db", fake_db)
     monkeypatch.setattr(server.httpx, "AsyncClient", _provider_client(payload))
 
-    with pytest.raises(HTTPException) as raised:
-        asyncio.run(server.auth_session(server.SessionExchange(session_id="denied"), Response()))
+    denied = asyncio.run(server.auth_session(server.SessionExchange(session_id="denied"), Response()))
 
-    assert raised.value.status_code == 403
-    assert raised.value.detail == UNAUTHORIZED_MESSAGE
+    assert denied.status_code == 403
+    assert denied.body.decode() == '{"detail":"' + UNAUTHORIZED_MESSAGE + '"}'
+    assert "nova_session=" in denied.headers["set-cookie"]
+    assert "Max-Age=0" in denied.headers["set-cookie"]
     assert fake_db.users.rows == []
     assert fake_db.sessions.rows == []
 
@@ -181,6 +183,7 @@ def test_private_and_paid_endpoints_stop_unauthorized_user_before_providers(monk
                 db.sessions.insert_one({
                     "session_id": session_id,
                     "user_id": user_id,
+                    "auth_version": 2,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 })
                 signed = URLSafeTimedSerializer(os.environ["SESSION_SECRET"]).dumps(session_id)
@@ -208,6 +211,42 @@ def test_private_and_paid_endpoints_stop_unauthorized_user_before_providers(monk
         for token_user_id in token_user_ids:
             token_user = db.users.find_one({"id": token_user_id}, {"_id": 0, "email": 1})
             assert token_user and token_user.get("email", "").strip().casefold() == ALLOWED_USER_EMAIL
+    finally:
+        db.sessions.delete_many({"user_id": user_id})
+        db.users.delete_one({"id": user_id})
+        mongo.close()
+
+
+def test_old_session_version_is_invalidated_and_cookie_is_expired():
+    mongo = MongoClient(os.environ["MONGO_URL"])
+    db = mongo[os.environ["DB_NAME"]]
+    user_id = f"TEST_old_session_{secrets.token_hex(6)}"
+    session_id = secrets.token_urlsafe(24)
+    db.users.insert_one({
+        "id": user_id,
+        "email": ALLOWED_USER_EMAIL,
+        "name": "Old Session Test",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    db.sessions.insert_one({
+        "session_id": session_id,
+        "user_id": user_id,
+        "auth_version": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    signed = URLSafeTimedSerializer(os.environ["SESSION_SECRET"]).dumps(session_id)
+
+    try:
+        response = requests.get(
+            f"{BASE_URL}/api/auth/me",
+            cookies={"nova_session": signed},
+            headers={"Origin": os.environ["FRONTEND_URL"]},
+            timeout=30,
+        )
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Oturum yenilenmeli"
+        assert "nova_session=" in response.headers["set-cookie"]
+        assert db.sessions.find_one({"session_id": session_id}) is None
     finally:
         db.sessions.delete_many({"user_id": user_id})
         db.users.delete_one({"id": user_id})

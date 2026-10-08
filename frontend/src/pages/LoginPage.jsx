@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { authApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { toast } from "sonner";
@@ -7,34 +7,41 @@ import { Loader2 } from "lucide-react";
 import { NovaPortrait } from "@/components/NovaPortrait";
 
 export default function LoginPage() {
-  const { user, loading, refresh } = useAuth();
+  const { user, loading, refresh, setUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const once = useRef(false);
   const [authError, setAuthError] = useState("");
+  const isOAuthCallback = location.hash.includes("session_id=");
 
   useEffect(() => {
     // Handle fragment from Emergent Auth callback: #session_id=XXX
     if (once.current) return;
-    const hash = window.location.hash;
+    const hash = location.hash;
     if (hash.includes("session_id=")) {
       once.current = true;
+      setUser(null);
       const sid = new URLSearchParams(hash.slice(1)).get("session_id");
       if (sid) {
         authApi.session(sid)
-          .then(() => { toast.success("Hoş geldin Bora"); refresh(); navigate("/", { replace: true }); })
+          .then(async () => {
+            await refresh();
+            toast.success("Hoş geldin Bora");
+            navigate("/", { replace: true });
+          })
           .catch((error) => {
             const message = error?.response?.data?.detail || "Giriş başarısız";
             setAuthError(message);
             toast.error(message);
-            window.history.replaceState(null, "", window.location.pathname);
+            navigate("/giris", { replace: true });
           });
       }
     }
-  }, [navigate, refresh]);
+  }, [location.hash, navigate, refresh, setUser]);
 
   useEffect(() => {
-    if (!loading && user) navigate("/", { replace: true });
-  }, [loading, user, navigate]);
+    if (!isOAuthCallback && !loading && user) navigate("/", { replace: true });
+  }, [isOAuthCallback, loading, user, navigate]);
 
   const login = () => {
     setAuthError("");
