@@ -56,8 +56,10 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Günlük/haftalık cevaplara Projeler sekmesindeki aktif ve bekleyen Bora AI Stüdyo bağlamı eklendi; Grup Karadüş klibi ve Kadına Şiddet serisi gerçek veriden aktarılıyor.
 - Komagene haftalık rutinleri haftanın geçmiş kısmı, bugün ve kalan işler olarak ayrılıyor; yalnız aktif Sheet rutinleri kullanılıyor.
 - Tüm yeni konuşma yüzeylerinde hitap `Bora`; eski görünür `Bora Bey` mesajları ekranda yeni hitaba normalize ediliyor.
-- TTS sesi OpenAI `gpt-4o-mini-tts` + `coral`, speed `0.95` ve kadın/sakin/sıcak/profesyonel Türkçe stil talimatına geçirildi.
-- Gerçek TTS ses örneği algısal analizde kadın, sakin, profesyonel, düşük robotiklik ve yüksek Türkçe netliği olarak değerlendirildi.
+- TTS sesi OpenAI `gpt-4o-mini-tts` + `marin`, speed `1.08` ve kadın yönetici asistanı Türkçe stil talimatına geçirildi (`coral` kullanıcı geri bildirimiyle elendi).
+- `marin`, `shimmer` ve `nova` aynı Türkçe metin/ayarlarla gerçek üretimde karşılaştırıldı; `marin` orta perde, 25–35 yaş hissi, düşük robotiklik ve en dengeli profesyonellik nedeniyle seçildi.
+- Nihai gerçek endpoint ses örneği algısal analizde belirgin kadın, orta perde, kalın/erkeksi olmayan, sıcak, profesyonel, kısa doğal duraklamalı ve İstanbul Türkçesine yakın olarak 9/10 değerlendirildi.
+- Bağımsız TTS sözleşme ve voice E2E testi 14/14 geçti (`iteration_8.json`); voice `marin`, speed `1.08`, MP3 çıktısı ve production talimatları doğrulandı.
 - Zorunlu bağımsız gerçek veri regresyonu backend 8/8 ve frontend masaüstü/mobil %100 geçti (`iteration_4.json`); mocked API yok.
 - Transient 90 saniye Google gecikmesi için yalnız calendar source id/summary 300 saniye ve Sheets 120 saniye TTL cachelendi; Calendar `events.list` içerikleri her tarih sorgusunda canlı kalıyor.
 - Connect callback ve disconnect sonrası kullanıcı cache'i temizleniyor; bağımsız performans retesti 8/8 ve 4.42 saniyede geçti (`iteration_5.json`).

@@ -41,6 +41,16 @@ openai_client = AsyncOpenAI(
     api_key=EMERGENT_LLM_KEY,
     base_url="https://integrations.emergentagent.com/llm"
 )
+NOVA_TTS_VOICE = "marin"
+NOVA_TTS_SPEED = 1.08
+NOVA_TTS_STYLE = "female-executive-assistant-natural-tr"
+NOVA_TTS_INSTRUCTIONS = (
+    "Türkçe konuş. Belirgin şekilde kadın, 20’lerinin sonu ile 30’larının başında hissedilen, "
+    "orta perdeli, sıcak, zeki ve profesyonel bir yönetici asistanı gibi konuş. "
+    "Net ve doğal İstanbul Türkçesi kullan. Kalın, erkeksi, ağır, robotik, haber spikeri gibi "
+    "veya çocuksu olma. Akıcı konuş; cümle aralarında kısa ve doğal duraklamalar kullan, "
+    "gereksiz uzatma yapma."
+)
 
 app = FastAPI(title="NOVA ASİSTAN API")
 api = APIRouter(prefix="/api")
@@ -546,21 +556,21 @@ async def tts(text: str = Form(...), user: dict = Depends(current_user)):
     try:
         resp = await openai_client.audio.speech.create(
             model="gpt-4o-mini-tts",
-            voice="coral",
+            voice=NOVA_TTS_VOICE,
             input=text,
-            instructions=(
-                "Türkçe konuş. Doğal, sakin, sıcak ve profesyonel bir kadın sesi kullan. "
-                "Orta-alt perdede, net ve akıcı konuş; İstanbul Türkçesi hissi ver. "
-                "Robotik tonlama, aşırı neşe ve yapay vurgu kullanma."
-            ),
-            speed=0.95,
+            instructions=NOVA_TTS_INSTRUCTIONS,
+            speed=NOVA_TTS_SPEED,
             response_format="mp3"
         )
         audio_bytes = resp.read() if hasattr(resp, 'read') else resp.content
         return StreamingResponse(
             iter([audio_bytes]),
             media_type="audio/mpeg",
-            headers={"X-Nova-Voice": "coral", "X-Nova-Voice-Style": "female-warm-professional"},
+            headers={
+                "X-Nova-Voice": NOVA_TTS_VOICE,
+                "X-Nova-Voice-Speed": str(NOVA_TTS_SPEED),
+                "X-Nova-Voice-Style": NOVA_TTS_STYLE,
+            },
         )
     except Exception as e:
         logger.exception("TTS error")

@@ -188,6 +188,7 @@ def test_tts_headers_model_contract_and_mp3(auth_client):
     )
     assert r.status_code == 200, r.text[:300]
     assert r.headers.get("content-type", "").startswith("audio/mpeg")
-    assert r.headers.get("X-Nova-Voice") == "coral"
-    assert r.headers.get("X-Nova-Voice-Style") == "female-warm-professional"
+    assert r.headers.get("X-Nova-Voice") == "marin"
+    assert r.headers.get("X-Nova-Voice-Speed") == "1.08"
+    assert r.headers.get("X-Nova-Voice-Style") == "female-executive-assistant-natural-tr"
     assert len(r.content) > 5000
