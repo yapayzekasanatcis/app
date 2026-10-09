@@ -57,6 +57,7 @@ async def save_conversation_context(
     question: str,
     answer: str,
     package: dict,
+    sources: list[dict] | None = None,
 ):
     document = {
         "user_id": user_id,
@@ -66,6 +67,7 @@ async def save_conversation_context(
         "events": (package.get("events") or [])[:5],
         "last_question": question,
         "last_answer": answer,
+        "sources": (sources or [])[:5],
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.conversation_contexts.replace_one(

@@ -11,15 +11,23 @@ from date_resolver import fold_turkish
 from personal_memory import profile_context_for_web
 
 
-WEB_FAILURE = "Şu anda canlı arama sonucu alamadım, Bora."
+WEB_FAILURE = "Bu bilgiyi canlı kaynaktan doğrulayamadım, Bora."
 logger = logging.getLogger("nova.intelligence")
+
+SOURCE_MATRIX = {
+    "hotel_search": "Önce Hotels.com, sonra otelin resmi sitesi; yalnız gerçek otel kullan.",
+    "restaurant_search": "Önce resmi mekan/menu bilgisi ve Yemeksepeti; gerçek çalışma saati ve menü doğrula.",
+    "cinema_search": "Önce Cinetime ÖzdilekPark Nilüfer resmi programı; yoksa diğer gerçek Bursa sinemaları.",
+    "event_search": "Önce resmi mekan, organizatör veya bilet platformu; gerçek tarih ve saat zorunlu.",
+    "leisure_search": "Gerçek mekanların resmi sayfaları ve güncel etkinlik kaynaklarıyla plan yap.",
+}
 
 
 def _annotation_sources(raw, content: str = "") -> list[dict]:
     try:
         annotations = getattr(raw.choices[0].message, "annotations", None) or []
     except Exception:
-        return []
+        annotations = []
     sources = []
     for annotation in annotations:
         data = annotation.model_dump() if hasattr(annotation, "model_dump") else annotation
@@ -80,6 +88,32 @@ def _render_sources(answer: str, sources: list[dict]) -> str:
     return answer.rstrip() + "\n\nKaynaklar:\n" + "\n".join(lines)
 
 
+def clean_web_answer(answer: str) -> str:
+    text = re.split(r"\n\s*(?:Kaynaklar|Sources)\s*:", answer, maxsplit=1, flags=re.IGNORECASE)[0]
+    text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
+    text = re.sub(r"https?://[^\s)\]>]+", "", text)
+    text = re.sub(r"【[^】]+】|\[(?:\d+|cite[^\]]*)\]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[ \t]+\n", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _source_instruction(intent: str, folded: str) -> str:
+    if "obilet" in folded or (intent == "travel_search" and "otobus" in folded):
+        return "Önce obilet.com; sonra resmi otobüs firması sayfası. Firma, saat, süre ve fiyatı doğrula."
+    if any(term in folded for term in ("pegasus", "flypgs", "thy", "turkishairlines", "ajet", "ucak")):
+        return "Önce flypgs.com ve turkishairlines.com; gerekiyorsa ajet.com. THY ile AJet'i birbirine eşitleme."
+    if any(term in folded for term in ("tren", "yht", "tcdd")):
+        return "Önce TCDD resmi kaynaklarını kullan."
+    if any(term in folded for term in ("feribot", "budo", "ido", "deniz otobusu")):
+        return "Önce İDO ve BUDO resmi kaynaklarını kullan."
+    if any(term in folded for term in ("mediamarkt", "teknoloji")):
+        return "Önce MediaMarkt, sonra Hepsiburada."
+    if any(term in folded for term in ("hepsiburada", "trendyol", "alisveris")):
+        return "Önce Hepsiburada, sonra Trendyol."
+    return SOURCE_MATRIX.get(intent, "Resmi kaynakları ve güvenilir ikincil kaynakları kullan.")
+
+
 async def answer_general_knowledge(message: str, session_id: str, prior_context: str = "") -> str:
     system = """Sen NOVA'sın. Bora'ya Türkçe, kısa ve doğru genel bilgi ver. Yerleşik genel bilgiyi kullanabilirsin. Kişisel bilgi, canlı fiyat, işletme saati, müsaitlik veya Google Workspace verisi uydurma. Emin değilsen açıkça bilmediğini söyle. Bora diye hitap et."""
     if prior_context:
@@ -95,13 +129,18 @@ async def answer_general_knowledge(message: str, session_id: str, prior_context:
 async def answer_live_web(
     message: str,
     session_id: str,
+    intent: str = "web_search",
     workspace_context: str = "",
     prior_context: str = "",
 ) -> tuple[str, list[dict]]:
     now = datetime.now(gint.ISTANBUL_TZ)
-    system = """You MUST use Google Search for every query and preserve verifiable source URLs. Sen NOVA'sın. Türkçe ve kısa yaz. Sahte işletme, fiyat, saat, sefer, menü, müsaitlik veya koltuk üretme. Doğrulayamadığın bilgiyi kesin yazma. Araştırma ve bağlantı sun; satın alma veya rezervasyon yaptığını söyleme."""
+    system = """You MUST use Google Search for every query and preserve verifiable source URLs. Sen NOVA'sın. Türkçe, kısa ve operasyonel yaz. Yalnız doğrulanmış 2-3 güçlü seçenek sun. Sahte mekan, placeholder ad, fiyat, saat, sefer, menü, müsaitlik, koltuk veya film seansı üretme. Doğrulanmayan alanı açıkça belirt. Personal Memory karar filtresini sessiz uygula; kullanıcı istemedikçe profil listesi okuma. Satın alma veya rezervasyon yaptığını söyleme. Kaynak URL'lerini ana cevap metnine doldurma."""
     search_request = f"Araştırma zamanı: {now.isoformat()}. Konum: Bursa, Türkiye.\nSoru: {message}"
     folded = fold_turkish(message)
+    search_request += "\nKaynak önceliği: " + _source_instruction(intent, folded)
+    if intent == "cinema_search":
+        search_request += f"\nBu zaman-kritik bir film seansı sorgusudur. Önce Google'da 'Cinetime ÖzdilekPark Nilüfer {now.date().isoformat()} film seansları' resmi programını ara; yarın ifadesi için ertesi günün gerçek seanslarını doğrula. Cinetime sonucu yoksa gerçek Bursa sinemalarına genişlet ve bunu açıkça söyle."
+    search_request += "\nKullanıcı tercihlerini cevapta listeleme; yalnız seçenek sıralamasında sessizce uygula: " + profile_context_for_web(message, intent)
     if any(term in folded for term in ("ulasim", "otobus", "ucak", "tren", "feribot", "arabayla", "rota")):
         search_request += "\nGüncel yol/geçiş ücretlerini, feribot veya toplu taşıma seferlerini, tahmini süreleri ve varsa fiyatları canlı kaynaklardan doğrula."
     if "istanbul" in folded and "arabayla" in folded:
@@ -140,7 +179,9 @@ async def answer_live_web(
     if not answer or not sources:
         logger.warning("Live web search returned no verifiable citations after retry")
         return WEB_FAILURE, []
+    answer = clean_web_answer(answer)
+    if not answer:
+        return WEB_FAILURE, []
     if workspace_context and "eşleşen kayıt bulunamadı" not in workspace_context:
         answer = "Takvim/Workspace bağlamı:\n" + workspace_context + "\n\nCanlı araştırma:\n" + answer
-    answer += "\n\nBora'nın tercih filtresi: " + profile_context_for_web(message)
-    return _render_sources(answer, sources), sources
+    return answer, sources

@@ -147,6 +147,18 @@ Türkçe konuşan, gerçek bir özel sekreter gibi davranan kişisel yapay zekâ
 - Final test: unit/router 20/20 PASS. Bağımsız gerçek acceptance 19/21 sonrası iki citation sorunu düzeltildi; Alanya ve İstanbul hedefli gerçek provider retestleri PASS. Zorunlu 21 akışın tamamı final kodda PASS; voice 3/3, MOCKED API yok.
 - Production deploy kullanıcı seçimi gereği yapılmadı; açık onay bekleniyor.
 
+## NOVA Final Hotfix (2026-10-09, deploy approval pending)
+- Router ana niyet önceliği düzeltildi: Travel, Hotel, Restaurant, Cinema, Event ve Leisure intentleri `yarın`, `bu akşam`, `bu hafta sonu` ifadelerinden önce sınıflandırılıyor; bu ifadeler tek başına Workspace/Routine tetiklemiyor.
+- Gemini Google Search kategori bazlı resmi kaynak matrisi aldı: Obilet/resmi firma, Pegasus/THY/AJet ayrımı, TCDD, İDO/BUDO, Hotels.com/resmi otel, Cinetime ÖzdilekPark, resmi mekan/etkinlik, Yemeksepeti ve alışveriş kaynak öncelikleri.
+- Personal Memory karar filtresi sessiz çalışıyor; restoran/sinema/otel/travel tercihleri kullanıcı istemedikçe cevapta profil listesi olarak tekrarlanmıyor. Evlilik yıldönümü 11 Ocak olarak eklendi.
+- Canlı sonuçlar yalnız doğrulanmış citation ile kabul ediliyor; placeholder mekan/sefer/fiyat yasak. Doğrulanamazsa `Bu bilgiyi canlı kaynaktan doğrulayamadım, Bora.` yanıtı veriliyor.
+- Web ana cevabından raw URL, markdown citation ve kaynak bölümü temizleniyor; kaynaklar Chat UI'da ayrı tıklanabilir bölümde tutuluyor.
+- Conversation context hotel/restaurant/cinema/travel/web intentini ve kaynaklarını `user_id + conversation_id` bazında koruyor; Calendar saat follow-up modelsiz devam ediyor.
+- TTS kaynak listesi, URL, domain ve citation okumuyor; `20:00` → `saat yirmi`, `19:30` → `saat on dokuz otuz` normalizasyonu uygulanıyor.
+- Mobile ChatPanel `min-w-0`, `overflow-x-hidden`, `overflow-wrap:anywhere` ve kaynak `break-all` ile düzeltildi; uzun cevapta input görünür, içerik dikey scroll ve yatay taşma yok. Desktop etkilenmedi.
+- Hedefli self-test: hotfix unit/router 14/14; real web/voice/context 12/12; mobile+desktop responsive PASS. Bağımsız hedefli test iteration_17: unit 14/14 + son kritik real 3/3 + responsive PASS. Full regression kredi tasarrufu gereği tekrarlanmadı; MOCKED API yok.
+- Production deploy yapılmadı; kullanıcı açık onayı bekleniyor.
+
 ## Backlog (next phases)
 ### P0
 - Gmail entegrasyonu

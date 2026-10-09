@@ -35,6 +35,10 @@ INTENT_EXAMPLES = {
         "bu haftanin onceliklerini oku", "bu hafta neye odaklanmaliyim",
     ],
 }
+LIVE_WEB_INTENTS = {
+    "travel_search", "hotel_search", "restaurant_search", "cinema_search",
+    "event_search", "leisure_search", "web_search",
+}
 
 
 def _fuzzy_intent(folded: str) -> tuple[Optional[str], int]:
@@ -75,10 +79,31 @@ def _semantic_intent(folded: str) -> Optional[str]:
 def _is_travel_search(folded: str) -> bool:
     transport = (
         "ulasim", "otobus", "ucak", "tren", "yht", "tcdd", "feribot",
-        "deniz otobusu", "arabayla", "aracla", "kopru", "rota", "seyahat",
+        "deniz otobusu", "arabayla", "aracla", "kopru", "rota", "seyahat", "gezi",
     )
-    action = ("arastir", "karsilastir", "en mantikli", "fiyat", "bilet", "nasil gider", "rota")
+    action = ("arastir", "karsilastir", "en mantikli", "fiyat", "bilet", "nasil gider", "rota", "planla", "gidis donus")
     return any(word in folded for word in transport) and any(word in folded for word in action)
+
+
+def _explicit_live_intent(folded: str) -> Optional[str]:
+    if "otel" in folded or "hotels.com" in folded or "konaklama" in folded:
+        return "hotel_search"
+    if any(term in folded for term in ("sinema", "film seans", "film program")):
+        return "cinema_search"
+    if any(term in folded for term in ("restoran", "yemek yiy", "corbaci", "kahvalti")) or (
+        "corba" in folded and any(term in folded for term in ("bul", "acik", "sonrasi"))
+    ):
+        return "restaurant_search"
+    discovery = any(term in folded for term in ("arastir", "bul", "nereye gidelim", "ne yapalim", "programini arastir"))
+    if any(term in folded for term in ("konser", "tiyatro", "etkinlik", "canli muzik", "club")) and discovery:
+        return "event_search"
+    if ("saatlik" in folded and "plan" in folded) or ("hafta sonu" in folded and "ne yap" in folded):
+        return "leisure_search"
+    if _is_travel_search(folded) or any(term in folded for term in ("obilet", "flypgs", "pegasus", "turkishairlines", "thy", "ajet")):
+        return "travel_search"
+    if "iki gunluk" in folded and any(term in folded for term in ("gezi", "plan")):
+        return "travel_search"
+    return None
 
 
 def _requires_live_web(folded: str) -> bool:
@@ -86,13 +111,14 @@ def _requires_live_web(folded: str) -> bool:
         "yaknimda", "yakinimda", "su anda acik", "acik corbaci", "guncel fiyat",
         "son haber", "internette arastir", "restoran bul", "otel bul", "etkinlik bul",
         "ucus arastir", "otobus arastir", "tren arastir", "feribot arastir",
-        "menu", "musaitlik", "hava durumu", "bugun hava", "bu gece",
+        "menu", "musaitlik", "hava durumu", "bugun hava", "bu gece", "guncel saat",
     )
-    return any(marker in folded for marker in markers) or _is_travel_search(folded)
+    return any(marker in folded for marker in markers) or bool(_explicit_live_intent(folded))
 
 
 def _web_needs_workspace(folded: str, target_date: Optional[date]) -> bool:
-    return bool(target_date) or any(word in folded for word in ("konser", "nikah", "programdan sonra", "etkinlikten sonra", "alanya"))
+    own_schedule = ("etkinligim", "programim", "isim var", "konserden sonra", "nikah", "alanya")
+    return any(word in folded for word in own_schedule)
 
 
 def classify_intent(message: str, today: datetime) -> tuple[str, Optional[date]]:
@@ -101,6 +127,9 @@ def classify_intent(message: str, today: datetime) -> tuple[str, Optional[date]]
         return memory["intent"], None
     folded = fold_turkish(message)
     target = resolve_requested_date(message, today)
+    explicit_live_intent = _explicit_live_intent(folded)
+    if explicit_live_intent:
+        return explicit_live_intent, target
     is_week = "bu hafta" in folded or "haftanin" in folded
     if is_week and ("rutin" in folded or "komagene" in folded):
         return "weekly_routines", None
@@ -113,8 +142,6 @@ def classify_intent(message: str, today: datetime) -> tuple[str, Optional[date]]
         term in folded for term in ("konser", "nikah", "etkinlik", "nerede", "saat kac")
     ):
         return "calendar_date_query", today.date()
-    if _is_travel_search(folded):
-        return "travel_search", target
     if _requires_live_web(folded):
         return "web_search", target
     calendar_terms = ("program", "takvim", "konser", "nikah", "etkinlik", "ne isim var", "nerede", "saat kac")
@@ -440,7 +467,7 @@ async def build_chat_package(
     }
     folded = fold_turkish(message)
     needs_workspace = intent in workspace_intents or (
-        intent in {"web_search", "travel_search"} and _web_needs_workspace(folded, target_date)
+        intent in LIVE_WEB_INTENTS and _web_needs_workspace(folded, target_date)
     )
     if not needs_workspace:
         return {
@@ -504,7 +531,7 @@ async def build_chat_package(
 
     web_context = (
         _relevant_web_context(message, events, tasks)
-        if intent in {"web_search", "travel_search"}
+        if intent in LIVE_WEB_INTENTS
         else "\n\n".join(part for part in (calendar_summary, _workspace_summary(sheet)) if part)
     )
     return {

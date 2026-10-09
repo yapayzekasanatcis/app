@@ -26,7 +26,7 @@ load_dotenv(ROOT_DIR / '.env')
 import google_integration as gint
 from auth_middleware import SingleUserAuthorizationMiddleware
 from auth_policy import ALLOWED_USER_EMAIL, AUTH_SESSION_VERSION, require_allowed_identity
-from assistant_context import build_chat_package
+from assistant_context import LIVE_WEB_INTENTS, build_chat_package
 from conversation_context import save_conversation_context
 from intelligence_models import answer_general_knowledge, answer_live_web
 from workspace_data import build_workspace_snapshot
@@ -73,8 +73,29 @@ NOVA_TTS_INSTRUCTIONS = (
 
 
 def prepare_tts_text(value: str) -> str:
-    """Reduce formatting pauses while preserving a single paragraph request."""
-    text = re.sub(r"\s*\n+\s*", ". ", value.strip())
+    """Remove visual citations and normalize Turkish clock speech."""
+    text = re.split(r"\b(?:Kaynaklar|Sources)\s*:", value.strip(), maxsplit=1, flags=re.IGNORECASE)[0]
+    text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
+    text = re.sub(r"https?://[^\s)\]>]+", "", text)
+    text = re.sub(r"【[^】]+】|\[(?:\d+|cite[^\]]*)\]", "", text, flags=re.IGNORECASE)
+
+    ones = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
+    tens = ["", "on", "yirmi", "otuz", "kırk", "elli"]
+
+    def number_word(number: int) -> str:
+        if number < 10:
+            return ones[number]
+        ten, one = divmod(number, 10)
+        return tens[ten] + (f" {ones[one]}" if one else "")
+
+    def spoken_time(match) -> str:
+        hour, minute = int(match.group(1)), int(match.group(2))
+        rendered = f"saat {number_word(hour)}"
+        return rendered if minute == 0 else f"{rendered} {number_word(minute)}"
+
+    text = re.sub(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", spoken_time, text)
+    text = re.sub(r"\bsaat\s+saat\b", "saat", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*\n+\s*", ". ", text)
     text = re.sub(r"\s*[—–]\s*", ", ", text)
     text = re.sub(r"\s*;\s*", ", ", text)
     text = re.sub(r"([.!?])\1+", r"\1", text)
@@ -407,9 +428,16 @@ def _data_source_label(package: dict) -> str:
         "weekly_priorities": "Calendar + Workspace Priority Engine",
         "weekly_routines": "Workspace Routines",
         "week_overview": "Calendar + Workspace",
+        "hotel_search": "Hotels.com + Official Hotel Sources",
+        "restaurant_search": "Live Restaurant Search",
+        "cinema_search": "Cinetime + Live Cinema Search",
+        "event_search": "Official Event Sources + Live Web Search",
+        "leisure_search": "Live City Planning Sources",
     }
     if intent == "web_search":
         return "Calendar + Web Search" if package.get("web_context") else "Web Search"
+    if intent in {"hotel_search", "restaurant_search", "cinema_search", "event_search", "leisure_search"}:
+        return ("Calendar + " if package.get("web_context") else "") + labels[intent]
     if intent == "travel_search":
         return "Calendar/Workspace + Web Search + Travel Profile" if package.get("web_context") else "Web Search + Travel Profile"
     return labels.get(intent, "General LLM")
@@ -440,10 +468,11 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
     sources = []
     if not answer:
         try:
-            if package.get("intent") in {"web_search", "travel_search"}:
+            if package.get("intent") in LIVE_WEB_INTENTS:
                 answer, sources = await answer_live_web(
                     body.message,
                     session_id,
+                    intent=package.get("intent", "web_search"),
                     workspace_context=package.get("web_context", ""),
                     prior_context=package.get("prior_context", ""),
                 )
@@ -483,6 +512,7 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
         body.message,
         answer,
         package,
+        sources=sources,
     )
 
     return {

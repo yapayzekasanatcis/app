@@ -28,6 +28,7 @@ FAMILY_BIRTHDAYS = {
 SPECIAL_DAYS = {
     "sevgililer": (2, 14, "Sevgililer Günü 14 Şubat"),
     "kadinlar": (3, 8, "Dünya Kadınlar Günü 8 Mart"),
+    "evlilik": (1, 11, "Evlilik yıldönümünüz 11 Ocak"),
 }
 
 SOUPS = ["kaşarlı domates", "mercimek", "ezogelin"]
@@ -139,9 +140,21 @@ def personal_memory_reply(message: str, now: datetime) -> Optional[dict]:
     return None
 
 
-def profile_context_for_web(message: str = "") -> str:
+def profile_context_for_web(message: str = "", intent: str = "") -> str:
     folded = fold_turkish(message)
+    if intent == "hotel_search" or "otel" in folded:
+        companion = "Tuğba ile seyahatte geniş yatak; sigara içilebilen oda tercih edilebilir." if "tugba" in folded else "Yalnız seyahatte tek kişilik, geniş yataklı, sigara içilmeyen oda tercih edilir."
+        purpose = "Tatil planında spa, termal ve havuz avantajdır." if any(term in folded for term in ("tatil", "termal", "gezi")) else "İş seyahatinde spa/termal/havuz öncelikli değildir."
+        return f"{companion} {purpose} Karar sırası fiyat, manzara, merkeze yakınlık. Tatilde yaklaşık 10.000 TL başlangıç bütçesi referanstır; sabit üst limit değildir. Hotels.com ve resmi otel verisini kullan."
+    if intent == "cinema_search" or "sinema" in folded or "film" in folded:
+        return "Bursa'da önce Cinetime ÖzdilekPark Nilüfer'i kontrol et. Bora korku, komedi, bilim kurgu ve animasyon; Tuğba aksiyon, bilim kurgu ve animasyon sever. Ortak seçimde bilim kurgu ve animasyon önceliklidir. Küçük salonda orta sıra; VIP/Gold Class fiyat farkı makulse değerlendir."
+    if intent == "restaurant_search" or any(term in folded for term in ("restoran", "yemek yiy", "corbaci", "corba")):
+        return "Bora sebze ve sulu yemek yemez; köfte, et, fast food, etli pizza, tantuni, kokoreç, midye ve kaşarlı domates/mercimek/ezogelin çorbası uygundur; mayonez istemez. Tuğba ev yemeği sever ama ortak planda Bora'ya uyum sağlar. Manzara avantajdır; kişi başı yaklaşık 1000 TL başlangıç referansıdır. Balkon Cafe, Kadim Restaurant, Fazıl Usta Çorbacısı, Pırpır Midye, Erbaylar Balıkçısı ve Haflinger Çiftliği yalnız bağlama uygunsa tercih sinyalidir."
+    if intent == "event_search":
+        return "Tuğba ile planda canlı müzik öncelikli; sonra club. Tiyatroda komedi, konserde güçlü sahne şovu tercih edilir. Yalnız gerçek etkinlik ve resmi/kanıtlanabilir tarih-saat kullan."
+    if intent == "leisure_search":
+        return "Tuğba ile çok yorucu olmayan gerçek plan yap. Kahve, uygun yemek ve gerçek etkinliği dengeli sırala. Kahvaltıda Balkon Cafe veya Haflinger Çiftliği bağlama uygunsa avantajdır."
     travel_terms = ("ulasim", "otobus", "ucak", "tren", "yht", "feribot", "arabayla", "rota", "otel", "seyahat")
-    if any(term in folded for term in travel_terms):
-        return """Bora Bursa'da yaşar ve Fiat Egea kullanır. Yakın mesafede özel aracı; uygun hat varsa TCDD/YHT; deniz geçişi avantajlıysa feribot/deniz otobüsü değerlendir. TAG varsa TAG, yoksa taksi. Otelde önce orduevi; değilse ekonomik, en az 3 yıldız ve kahvaltı dahil seçenek tercih et. Otobüste mümkünse en ön, yoksa cam kenarı ister; müsaitliği doğrulamadan koltuk var deme. Uçuşta önce Sabiha Gökçen, sonra İstanbul Havalimanı; avantajlı direkt uçuş varsa Yenişehir'i ayrıca değerlendir."""
+    if intent == "travel_search" or any(term in folded for term in travel_terms) or "gezi" in folded:
+        return """Başlangıç Bursa. Yakın mesafede özel araç; uygun hat varsa TCDD/YHT; deniz geçişinde feribot/deniz otobüsü değerlendir. TAG, sonra otobüs/metro, gerekirse taksi. Otobüste Pamukkale, Kamil Koç, Lüks Karadeniz, Varan ve Özkaymak tercih sinyalidir; mümkünse ön, yoksa cam kenarı ama koltuğu satın alma ekranında doğrula. Uçakta Pegasus sonra THY; SAW, sonra IST, avantajlı direkt uçuş varsa Yenişehir. AJet'i THY diye sunma. Uçakta cam kenarı, acil çıkış değil; kısa seyahatte kabin bagajı. YHT Business fiyat farkı makulse, değilse cam kenarı. Özel araçta ücretli yolu yalnız belirgin avantaj varsa öner; İstanbul için önce Eskihisar–Topçular, sonra köprü/Yalova–Pendik/BUDO/İDO seçeneklerini güncel veriyle karşılaştır."""
     return """Bora sebze yemeği yemez. Köfte, etli yemekler, fast food, etli/sucuklu/kıymalı pizza, tantuni, kokoreç, midye dolma ve midye tava sever. Sevdiği çorbalar kaşarlı domates, mercimek ve ezogelindir. Mayonez istemez."""

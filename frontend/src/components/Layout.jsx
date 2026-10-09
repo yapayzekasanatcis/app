@@ -40,11 +40,11 @@ export const Layout = () => {
         <div className="flex shrink-0 items-center gap-2">
           <Dialog>
             <DialogTrigger asChild>
-              <button data-testid="open-chat-mobile" className="h-12 w-12 rounded-full bg-[color:var(--nova-bg-3)] grid place-items-center">
+              <button aria-label="NOVA sohbetini aç" data-testid="open-chat-mobile" className="h-12 w-12 rounded-full bg-[color:var(--nova-bg-3)] grid place-items-center">
                 <MessageSquare className="h-5 w-5" />
               </button>
             </DialogTrigger>
-            <DialogContent className="max-w-[calc(100vw-1rem)] sm:max-w-md p-0 overflow-hidden bg-[color:var(--nova-bg-2)] border border-[color:var(--nova-border)] shadow-2xl">
+            <DialogContent data-testid="mobile-chat-dialog" className="max-w-[calc(100vw-1rem)] sm:max-w-md p-0 overflow-hidden bg-[color:var(--nova-bg-2)] border border-[color:var(--nova-border)] shadow-2xl">
               <DialogHeader className="sr-only"><DialogTitle>Sohbet</DialogTitle></DialogHeader>
               <ChatPanel onState={setNovaState} extraMessage={lastReply} />
             </DialogContent>

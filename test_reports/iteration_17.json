@@ -1,0 +1,45 @@
+{
+  "summary": "Hedefli NOVA FINAL HOTFIX doğrulaması tamamlandı: unit hotfix suite (14/14), real provider hedefli 3 test (3/3), desktop+mobile overflow/portrait/login güvenlik görünürlüğü PASS.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "/app/backend/tests/test_final_hotfix.py",
+        "issue": "Pytest import path eksikliği vardı (assistant_context ModuleNotFoundError); test altyapısı için sys.path eklendi."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_final_hotfix.py",
+    "/app/backend/tests/test_final_hotfix_real.py",
+    "/app/test_reports/pytest/pytest_results_iteration_17_unit.xml",
+    "/app/test_reports/pytest/pytest_results_iteration_17_real_targeted.xml",
+    "/root/.emergent/automation_output/20261009_023834/console_20261009_023834.log"
+  ],
+  "action_items": [
+    "Bloklayıcı bug gözlenmedi; production deploy bu iterasyon kapsamında yapılmadı.",
+    "Kapsam gereği full real-provider regression yeniden çalıştırılmadı (kredi tasarrufu talebine uyuldu)."
+  ],
+  "critical_code_review_comments": [
+    "Intent routing, source cleaning, TTS cleaning ve follow-up context davranışı hedefli testlerde sözleşmeye uygun.",
+    "ChatPanel ve mobile dialog overflow koruması (break-all/overflow-x-hidden) ölçümlerde doğru çalıştı; yatay taşma gözlenmedi."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_final_hotfix.py",
+    "/app/test_reports/iteration_17.json"
+  ],
+  "success_rate": {
+    "backend": "100% (17/17: unit 14/14 + targeted real 3/3)",
+    "frontend": "100% (frontend load + desktop 1920x800 + mobile 390x844 overflow/visibility checks)"
+  },
+  "seed_data_creation": "session_helper ile auth_version=2 geçici session üretildi ve test bitiminde silindi; kalıcı kullanıcı/token verisi değiştirilmedi.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Bu iterasyonda yalnız istenen hedefli testler çalıştırıldı: test_final_hotfix.py tam koşu + test_final_hotfix_real.py içinden test_07/test_11/test_12. Full regression intentionally skipped.",
+  "rca of the issue": "Ürün tarafında yeni hata yeniden üretilemedi. Tek sorun test dosyası import path konfigürasyonuydu ve test altyapısında düzeltildi."
+}
