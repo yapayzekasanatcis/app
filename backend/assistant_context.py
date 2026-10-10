@@ -7,8 +7,10 @@ from typing import Optional
 import google_integration as gint
 from conversation_context import get_conversation_context, resolve_follow_up
 from date_resolver import fold_turkish, resolve_requested_date
-from personal_memory import personal_memory_reply
+from intent_router import RouteDecision, route_message
+from personal_memory import personal_context_for_keys, personal_memory_reply
 from rapidfuzz import fuzz
+from response_composer import compose_calendar_answer
 from workspace_data import load_workspace_source, rows_to_dicts
 
 
@@ -37,7 +39,7 @@ INTENT_EXAMPLES = {
 }
 LIVE_WEB_INTENTS = {
     "travel_search", "hotel_search", "restaurant_search", "cinema_search",
-    "event_search", "leisure_search", "web_search",
+    "event_search", "leisure_search", "shopping_search", "web_search",
 }
 
 
@@ -122,37 +124,8 @@ def _web_needs_workspace(folded: str, target_date: Optional[date]) -> bool:
 
 
 def classify_intent(message: str, today: datetime) -> tuple[str, Optional[date]]:
-    memory = personal_memory_reply(message, today)
-    if memory:
-        return memory["intent"], None
-    folded = fold_turkish(message)
-    target = resolve_requested_date(message, today)
-    explicit_live_intent = _explicit_live_intent(folded)
-    if explicit_live_intent:
-        return explicit_live_intent, target
-    is_week = "bu hafta" in folded or "haftanin" in folded
-    if is_week and ("rutin" in folded or "komagene" in folded):
-        return "weekly_routines", None
-    if is_week and any(word in folded for word in ("onemli", "oncelik", "islerim", "ne yap")):
-        return "weekly_priorities", None
-    semantic_intent = _semantic_intent(folded)
-    if semantic_intent:
-        return semantic_intent, today.date() if semantic_intent in {"briefing", "today_schedule"} else None
-    if any(word in folded for word in ("bugun", "bugunku")) and any(
-        term in folded for term in ("konser", "nikah", "etkinlik", "nerede", "saat kac")
-    ):
-        return "calendar_date_query", today.date()
-    if _requires_live_web(folded):
-        return "web_search", target
-    calendar_terms = ("program", "takvim", "konser", "nikah", "etkinlik", "ne isim var", "nerede", "saat kac")
-    if target and any(term in folded for term in calendar_terms):
-        return "calendar_date_query", target
-    if is_week and any(word in folded for word in ("program", "takvim", "ne var")):
-        return "week_overview", None
-    fuzzy_intent, _score = _fuzzy_intent(folded)
-    if fuzzy_intent:
-        return fuzzy_intent, today.date() if fuzzy_intent in {"briefing", "today_schedule"} else None
-    return "general", None
+    decision = route_message(message, today)
+    return decision.intent, decision.target_date
 
 
 def _clean_description(value: str) -> str:
@@ -419,12 +392,16 @@ async def build_chat_package(
     message: str,
     intent_override: Optional[str] = None,
     conversation_id: str = "default",
+    route_decision: Optional[RouteDecision] = None,
 ) -> dict:
     now = datetime.now(gint.ISTANBUL_TZ)
     stored_context = await get_conversation_context(db, user_id, conversation_id)
     follow_up = resolve_follow_up(message, stored_context)
-    memory = None if follow_up else personal_memory_reply(message, now)
-    intent, target_date = classify_intent(message, now)
+    decision = route_decision or route_message(message, now)
+    intent, target_date = decision.intent, decision.target_date
+    memory = None
+    if not follow_up and (intent == "personal_memory" or (intent == "general" and decision.memory_context_keys)):
+        memory = personal_memory_reply(message, now)
     prior_context = ""
     if follow_up:
         intent = follow_up["intent"]
@@ -456,7 +433,11 @@ async def build_chat_package(
             "reply": memory["reply"],
             "prior_context": "",
             "web_context": "",
+            "connector": decision.connector,
+            "requested_items": decision.requested_items,
         }
+    elif decision.memory_context_keys:
+        prior_context = personal_context_for_keys(decision.memory_context_keys)
     if intent_override:
         intent = intent_override
         target_date = now.date() if intent in {"briefing", "today_schedule"} else target_date
@@ -482,14 +463,16 @@ async def build_chat_package(
             "reply": None,
             "prior_context": prior_context,
             "web_context": "",
+            "connector": decision.connector,
+            "requested_items": decision.requested_items,
         }
 
     if intent in {"weekly_priorities", "weekly_routines", "week_overview"}:
         query_start = now.date() - timedelta(days=now.weekday())
         query_end = query_start + timedelta(days=7)
     else:
-        query_start = target_date or now.date()
-        query_end = query_start + timedelta(days=1)
+        query_start = decision.range_start or target_date or now.date()
+        query_end = decision.range_end or (query_start + timedelta(days=1))
     source = await load_workspace_source(db, user_id, query_start, query_end)
     sheet = source["sheet"]
     sheet_ok = source["sheet_ok"]
@@ -510,11 +493,14 @@ async def build_chat_package(
     calendar_summary = "\n".join(f"- {_event_line(event)}" for event in events) or "Etkinlik YOK"
     reply = None
     if intent == "calendar_date_query":
-        reply = service_calendar_date_query(target_date, events, calendar_ok)
+        reply = compose_calendar_answer(target_date or query_start, events, calendar_ok, message)
     elif intent == "today_schedule":
         reply = service_today_schedule(events, projects, calendar_ok)
     elif intent == "briefing":
-        reply = service_briefing(events, tasks, projects, routines, now, calendar_ok, sheet_ok)
+        briefing_now = now
+        if target_date and target_date != now.date():
+            briefing_now = datetime.combine(target_date, now.timetz())
+        reply = service_briefing(events, tasks, projects, routines, briefing_now, calendar_ok, sheet_ok)
     elif intent == "pending_tasks":
         reply = service_pending_tasks(tasks, sheet_ok)
     elif intent == "weekly_priorities":
@@ -546,4 +532,6 @@ async def build_chat_package(
         "reply": reply,
         "prior_context": prior_context,
         "web_context": web_context,
+        "connector": decision.connector,
+        "requested_items": decision.requested_items,
     }

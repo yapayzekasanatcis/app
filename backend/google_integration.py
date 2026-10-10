@@ -40,6 +40,7 @@ SCOPES = [
 ]
 
 CALENDAR_NAME = "NOVA ASİSTAN — Özel Takvim"
+SELECTED_CALENDAR_NAMES = (CALENDAR_NAME, "Tiyatral Nikâh")
 SHEET_NAME = "NOVA İş Merkezi"
 DRIVE_FOLDER_NAME = "NOVA ASİSTAN"
 DOC_NAME = "NOVA ASİSTAN — Çekirdek Kurallar ve Rutinler"
@@ -256,6 +257,30 @@ def _find_named_calendar(cal) -> Optional[dict]:
             return None
 
 
+def _find_selected_calendars(cal) -> list[dict]:
+    items = []
+    page_token = None
+    while True:
+        result = _http(cal.calendarList().list(
+            maxResults=250,
+            pageToken=page_token,
+            showHidden=True,
+            fields="nextPageToken,items(id,summary,primary,selected,accessRole)",
+        ))
+        items.extend(result.get("items", []))
+        page_token = result.get("nextPageToken")
+        if not page_token:
+            break
+    ordered = []
+    for name in SELECTED_CALENDAR_NAMES:
+        ordered.extend(item for item in items if item.get("summary") == name)
+    ordered.extend(item for item in items if item.get("primary"))
+    if not ordered:
+        ordered = [{"id": "primary", "summary": "primary", "primary": True}]
+    seen = set()
+    return [item for item in ordered if not (item.get("id") in seen or seen.add(item.get("id")))]
+
+
 def _to_istanbul_iso(value: Optional[str]) -> Optional[str]:
     if not value or "T" not in value:
         return value
@@ -267,46 +292,53 @@ async def get_calendar_events_for_range(db, user_id: str, start_date: date, end_
     """Return named NOVA calendar events for an Istanbul date range."""
     creds = await credentials_for(db, user_id)
     cal = _service("calendar", "v3", creds)
-    source = _cached(_calendar_source_cache, user_id, CALENDAR_SOURCE_CACHE_TTL)
-    if source is None:
-        match = _find_named_calendar(cal)
-        source = _store_cache(
+    sources = _cached(_calendar_source_cache, user_id, CALENDAR_SOURCE_CACHE_TTL)
+    if sources is None:
+        matches = _find_selected_calendars(cal)
+        sources = _store_cache(
             _calendar_source_cache,
             user_id,
-            {
-                "id": match["id"] if match else "primary",
-                "name": match["summary"] if match else "primary",
-            },
+            [{"id": match["id"], "name": match.get("summary") or "primary"} for match in matches],
         )
-    calendar_id = source["id"]
-    calendar_name = source["name"]
 
     day_start = datetime.combine(start_date, datetime.min.time(), tzinfo=ISTANBUL_TZ)
     day_end = datetime.combine(end_date, datetime.min.time(), tzinfo=ISTANBUL_TZ)
 
-    ev = _http(cal.events().list(
-        calendarId=calendar_id,
-        singleEvents=True, orderBy="startTime",
-        timeMin=day_start.isoformat(), timeMax=day_end.isoformat(),
-        timeZone="Europe/Istanbul",
-        maxResults=250,
-        fields="items(id,summary,description,start,end,location,status,htmlLink)"
-    ))
     out = []
-    for item in ev.get("items", []):
-        start = item.get("start", {}).get("dateTime") or item.get("start", {}).get("date")
-        end = item.get("end", {}).get("dateTime") or item.get("end", {}).get("date")
-        out.append({
-            "id": item.get("id"),
-            "title": item.get("summary", "(başlıksız)"),
-            "description": item.get("description", ""),
-            "location": item.get("location", ""),
-            "start": _to_istanbul_iso(start),
-            "end": _to_istanbul_iso(end),
-            "link": item.get("htmlLink"),
-            "calendar": calendar_name,
-        })
-    return out
+    seen = set()
+    for source in sources:
+        ev = _http(cal.events().list(
+            calendarId=source["id"],
+            singleEvents=True, orderBy="startTime",
+            timeMin=day_start.isoformat(), timeMax=day_end.isoformat(),
+            timeZone="Europe/Istanbul",
+            maxResults=250,
+            fields="items(id,summary,description,start,end,location,status,htmlLink,recurringEventId)"
+        ))
+        for item in ev.get("items", []):
+            start = item.get("start", {}).get("dateTime") or item.get("start", {}).get("date")
+            end = item.get("end", {}).get("dateTime") or item.get("end", {}).get("date")
+            normalized_start = _to_istanbul_iso(start)
+            normalized_end = _to_istanbul_iso(end)
+            dedupe_key = (
+                (item.get("summary") or "").strip().casefold(), normalized_start, normalized_end,
+                (item.get("location") or "").strip().casefold(),
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            out.append({
+                "id": item.get("id"),
+                "title": item.get("summary", "(başlıksız)"),
+                "description": item.get("description", ""),
+                "location": item.get("location", ""),
+                "start": normalized_start,
+                "end": normalized_end,
+                "link": item.get("htmlLink"),
+                "calendar": source["name"],
+                "recurring_event_id": item.get("recurringEventId"),
+            })
+    return sorted(out, key=lambda event: event.get("start") or "")
 
 
 async def get_calendar_events_for_date(db, user_id: str, target_date: date) -> list:
@@ -340,6 +372,15 @@ async def get_sheet_data(db, user_id: str):
     return _store_cache(_sheet_cache, user_id, out)
 
 
+async def get_sheet_tab_data(db, user_id: str, tab_name: str):
+    if tab_name not in {"İşler", "Projeler", "Rutinler"}:
+        return None
+    data = await get_sheet_data(db, user_id)
+    if data is None or tab_name not in data:
+        return None
+    return {"tab": tab_name, "rows": data[tab_name], "meta": data.get("_meta", {})}
+
+
 async def get_drive_folder_files(db, user_id: str):
     creds = await credentials_for(db, user_id)
     drive = _service("drive", "v3", creds)
@@ -355,7 +396,7 @@ async def get_drive_folder_files(db, user_id: str):
     return {"folder": folders[0], "files": r.get("files", [])}
 
 
-async def get_core_doc_text(db, user_id: str):
+async def get_doc_text_by_name(db, user_id: str, document_name: str):
     creds = await credentials_for(db, user_id)
     drive = _service("drive", "v3", creds)
     docs = _service("docs", "v1", creds)
@@ -364,7 +405,7 @@ async def get_core_doc_text(db, user_id: str):
         return None
     files = _find_drive_file(
         drive,
-        DOC_NAME,
+        document_name,
         "application/vnd.google-apps.document",
         parent_id=folders[0]["id"],
     )
@@ -402,6 +443,10 @@ async def get_core_doc_text(db, user_id: str):
         "headings": headings,
         "link": files[0].get("webViewLink"),
     }
+
+
+async def get_core_doc_text(db, user_id: str):
+    return await get_doc_text_by_name(db, user_id, DOC_NAME)
 
 
 # ---------- Router ----------

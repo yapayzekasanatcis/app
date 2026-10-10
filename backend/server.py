@@ -26,9 +26,15 @@ load_dotenv(ROOT_DIR / '.env')
 import google_integration as gint
 from auth_middleware import SingleUserAuthorizationMiddleware
 from auth_policy import ALLOWED_USER_EMAIL, AUTH_SESSION_VERSION, require_allowed_identity
+from action_executor import execute_action
 from assistant_context import LIVE_WEB_INTENTS, build_chat_package
+from capability_registry import get_capability_registry
+from connector_router import execute_read_connector
 from conversation_context import save_conversation_context
 from intelligence_models import answer_general_knowledge, answer_live_web
+from intent_router import route_message
+from personal_memory import required_memory_fact_prefix
+from response_composer import apply_freshness_guard, ensure_complete_response, ensure_requested_items
 from workspace_data import build_workspace_snapshot
 from security import BrowserSecurityMiddleware, configured_origins, csrf_token_for_request
 
@@ -433,10 +439,19 @@ def _data_source_label(package: dict) -> str:
         "cinema_search": "Cinetime + Live Cinema Search",
         "event_search": "Official Event Sources + Live Web Search",
         "leisure_search": "Live City Planning Sources",
+        "shopping_search": "Provider-targeted Shopping Search",
+        "planning": "General LLM + Personal Memory Context",
+        "personal_work": "Calendar + Google Sheets Personal Work",
+        "availability": "Google Calendar · Availability",
+        "drive_read": "Google Drive",
+        "docs_read": "Google Docs",
+        "sheets_read": "Google Sheets",
+        "gmail_read": "Capability Registry",
+        "meta": "Conversation",
     }
     if intent == "web_search":
         return "Calendar + Web Search" if package.get("web_context") else "Web Search"
-    if intent in {"hotel_search", "restaurant_search", "cinema_search", "event_search", "leisure_search"}:
+    if intent in {"hotel_search", "restaurant_search", "cinema_search", "event_search", "leisure_search", "shopping_search"}:
         return ("Calendar + " if package.get("web_context") else "") + labels[intent]
     if intent == "travel_search":
         return "Calendar/Workspace + Web Search + Travel Profile" if package.get("web_context") else "Web Search + Travel Profile"
@@ -445,23 +460,56 @@ def _data_source_label(package: dict) -> str:
 
 @api.post("/chat")
 async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
+    now = datetime.now(ZoneInfo("Europe/Istanbul"))
+    decision = route_message(body.message, now)
+    special_result = None
+    action_result = None
+    registry = None
     try:
-        package = await build_chat_package(
-            db,
-            user["id"],
-            body.message,
-            conversation_id=body.conversation_id,
-        )
+        special_intents = {"meta", "drive_read", "docs_read", "sheets_read", "gmail_read", "personal_work", "availability"}
+        if decision.intent in special_intents or decision.action:
+            registry = await get_capability_registry(db, user["id"])
+        if decision.action:
+            action = await execute_action(decision, registry or {})
+            action_result = action.as_dict()
+            special_result = {"reply": action.reply, "source": "Capability Registry + Action Executor", "events": []}
+        elif decision.intent in special_intents:
+            special_result = await execute_read_connector(decision, body.message, db, user["id"], registry or {})
+        if special_result:
+            package = {
+                "intent": decision.intent,
+                "target_date": decision.target_date.isoformat() if decision.target_date else None,
+                "calendar_summary": "",
+                "workspace_summary": "",
+                "reply": special_result["reply"],
+                "prior_context": "",
+                "web_context": "",
+                "events": special_result.get("events", []),
+                "connector": decision.connector,
+                "requested_items": decision.requested_items,
+                "data_source_override": special_result["source"],
+            }
+        else:
+            package = await build_chat_package(
+                db,
+                user["id"],
+                body.message,
+                conversation_id=body.conversation_id,
+                route_decision=decision,
+            )
     except Exception as exc:
         logger.error("Real-time conversation context failed type=%s", type(exc).__name__)
+        connector_failure = bool(decision.action or decision.connector in {"calendar", "sheets", "drive", "docs", "gmail", "workspace"})
         package = {
-            "intent": "general",
+            "intent": decision.intent if connector_failure else "general",
             "calendar_summary": "GOOGLE_TAKVIM_HATASI",
             "workspace_summary": "GOOGLE_WORKSPACE_HATASI",
-            "reply": None,
+            "reply": "Bora, şu anda ilgili bağlantıdan sonuç alamıyorum." if connector_failure else None,
             "prior_context": "",
             "web_context": "",
             "events": [],
+            "connector": decision.connector,
+            "requested_items": decision.requested_items,
         }
     session_id = f'{user["id"]}:{body.conversation_id}'
     answer = package.get("reply")
@@ -485,6 +533,16 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
         except Exception as exc:
             logger.error("Chat provider error type=%s", type(exc).__name__)
             raise HTTPException(500, "NOVA şu anda yanıt veremiyor")
+    if package.get("intent") in LIVE_WEB_INTENTS:
+        current_sensitive = any(term in body.message.casefold() for term in ("fiyat", "ücret", "tarife", "maliyet", "güncel"))
+        target_year = decision.target_date.year if decision.target_date else now.year
+        answer = apply_freshness_guard(answer, target_year, current_sensitive)
+        answer = ensure_requested_items(answer, decision.requested_items)
+    if package.get("intent") == "planning":
+        prefix = required_memory_fact_prefix(decision.memory_context_keys)
+        if prefix and prefix not in answer:
+            answer = f"{prefix} {answer}"
+    answer = ensure_complete_response(answer)
 
     # Save to conversation history
     await db.messages.insert_one({
@@ -518,10 +576,17 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
     return {
         "answer": answer,
         "intent": package.get("intent", "general"),
-        "data_source": _data_source_label(package),
+        "data_source": package.get("data_source_override") or _data_source_label(package),
         "sources": sources,
         "source": body.source,
+        "action_result": action_result,
+        "resolved_target_date": package.get("target_date"),
     }
+
+
+@api.get("/capabilities")
+async def capabilities(user: Annotated[dict, Depends(current_user)]):
+    return await get_capability_registry(db, user["id"], force=True)
 
 
 @api.get("/chat/history")

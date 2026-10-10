@@ -142,6 +142,8 @@ def personal_memory_reply(message: str, now: datetime) -> Optional[dict]:
 
 def profile_context_for_web(message: str = "", intent: str = "") -> str:
     folded = fold_turkish(message)
+    if intent in {"web_search", "shopping_search"}:
+        return ""
     if intent == "hotel_search" or "otel" in folded:
         companion = "Tuğba ile seyahatte geniş yatak; sigara içilebilen oda tercih edilebilir." if "tugba" in folded else "Yalnız seyahatte tek kişilik, geniş yataklı, sigara içilmeyen oda tercih edilir."
         purpose = "Tatil planında spa, termal ve havuz avantajdır." if any(term in folded for term in ("tatil", "termal", "gezi")) else "İş seyahatinde spa/termal/havuz öncelikli değildir."
@@ -158,3 +160,25 @@ def profile_context_for_web(message: str = "", intent: str = "") -> str:
     if intent == "travel_search" or any(term in folded for term in travel_terms) or "gezi" in folded:
         return """Başlangıç Bursa. Yakın mesafede özel araç; uygun hat varsa TCDD/YHT; deniz geçişinde feribot/deniz otobüsü değerlendir. TAG, sonra otobüs/metro, gerekirse taksi. Otobüste Pamukkale, Kamil Koç, Lüks Karadeniz, Varan ve Özkaymak tercih sinyalidir; mümkünse ön, yoksa cam kenarı ama koltuğu satın alma ekranında doğrula. Uçakta Pegasus sonra THY; SAW, sonra IST, avantajlı direkt uçuş varsa Yenişehir. AJet'i THY diye sunma. Uçakta cam kenarı, acil çıkış değil; kısa seyahatte kabin bagajı. YHT Business fiyat farkı makulse, değilse cam kenarı. Özel araçta ücretli yolu yalnız belirgin avantaj varsa öner; İstanbul için önce Eskihisar–Topçular, sonra köprü/Yalova–Pendik/BUDO/İDO seçeneklerini güncel veriyle karşılaştır."""
     return """Bora sebze yemeği yemez. Köfte, etli yemekler, fast food, etli/sucuklu/kıymalı pizza, tantuni, kokoreç, midye dolma ve midye tava sever. Sevdiği çorbalar kaşarlı domates, mercimek ve ezogelindir. Mayonez istemez."""
+
+
+def personal_context_for_keys(keys: list[str]) -> str:
+    parts = []
+    if "tugba" in keys:
+        parts.append("Tuğba Bora'nın eşidir; doğum tarihi 10 Kasım 1990. Hediye/sürprizde çiçek, tatlı, yemek ve duruma göre tatil uygundur.")
+    if "atakan" in keys:
+        parts.append("Atakan Bora'nın oğludur; doğum günü 11 Ocak.")
+    if "food_preferences" in keys:
+        parts.append(profile_context_for_web("restoran", "restaurant_search"))
+    if "travel_preferences" in keys:
+        parts.append(profile_context_for_web("seyahat", "travel_search"))
+    return "\n".join(parts)
+
+
+def required_memory_fact_prefix(keys: list[str]) -> str:
+    facts = []
+    if "tugba" in keys:
+        facts.append("Tuğba'nın doğum günü 10 Kasım.")
+    if "atakan" in keys:
+        facts.append("Atakan'ın doğum günü 11 Ocak.")
+    return " ".join(facts)

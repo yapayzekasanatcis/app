@@ -2,6 +2,7 @@
 import re
 import unicodedata
 from datetime import date, datetime, timedelta
+from dataclasses import dataclass
 from typing import Optional
 
 from dateparser.search import search_dates
@@ -30,6 +31,15 @@ WEEKDAYS = {
     "cumartesi": 5,
     "pazar": 6,
 }
+
+
+@dataclass(frozen=True)
+class ResolvedTemporal:
+    target_date: Optional[date] = None
+    range_start: Optional[date] = None
+    range_end: Optional[date] = None
+    target_time: Optional[str] = None
+    phrase: Optional[str] = None
 
 
 def fold_turkish(value: str) -> str:
@@ -84,3 +94,32 @@ def resolve_requested_date(message: str, reference: datetime) -> Optional[date]:
         },
     )
     return found[0][1].date() if found else None
+
+
+def resolve_temporal(message: str, reference: datetime) -> ResolvedTemporal:
+    """Resolve one canonical Istanbul date/range/time before intent routing."""
+    text = fold_turkish(message)
+    time_match = re.search(r"\b([01]?\d|2[0-3])[:.]([0-5]\d)\b", text)
+    target_time = f"{int(time_match.group(1)):02d}:{time_match.group(2)}" if time_match else None
+
+    if "bu hafta sonu" in text or "hafta sonu" in text:
+        days_to_saturday = (5 - reference.weekday()) % 7
+        start = reference.date() + timedelta(days=days_to_saturday)
+        if reference.weekday() == 6:
+            start = reference.date() - timedelta(days=1)
+        return ResolvedTemporal(start, start, start + timedelta(days=2), target_time, "bu hafta sonu")
+
+    if "gelecek hafta" in text or "onumuzdeki hafta" in text:
+        start = reference.date() + timedelta(days=(7 - reference.weekday()))
+        return ResolvedTemporal(start, start, start + timedelta(days=7), target_time, "gelecek hafta")
+
+    target = resolve_requested_date(message, reference)
+    phrase = None
+    if re.search(r"\bbugun\b", text):
+        phrase = "bugün"
+    elif re.search(r"\byarin\b", text):
+        phrase = "yarın"
+    elif "bu aksam" in text or "bu gece" in text:
+        target = reference.date()
+        phrase = "bu akşam"
+    return ResolvedTemporal(target, target, target + timedelta(days=1) if target else None, target_time, phrase)

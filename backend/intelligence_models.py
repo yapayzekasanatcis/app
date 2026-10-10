@@ -121,7 +121,7 @@ async def answer_general_knowledge(message: str, session_id: str, prior_context:
     chat = (
         LlmChat(api_key=os.environ["EMERGENT_LLM_KEY"], session_id=session_id, system_message=system)
         .with_model("openai", "gpt-4o-mini")
-        .with_params(temperature=0.2, max_tokens=700)
+        .with_params(temperature=0.2, max_tokens=900)
     )
     return await chat.send_message(UserMessage(text=message))
 
@@ -140,7 +140,11 @@ async def answer_live_web(
     search_request += "\nKaynak önceliği: " + _source_instruction(intent, folded)
     if intent == "cinema_search":
         search_request += f"\nBu zaman-kritik bir film seansı sorgusudur. Önce Google'da 'Cinetime ÖzdilekPark Nilüfer {now.date().isoformat()} film seansları' resmi programını ara; yarın ifadesi için ertesi günün gerçek seanslarını doğrula. Cinetime sonucu yoksa gerçek Bursa sinemalarına genişlet ve bunu açıkça söyle."
-    search_request += "\nKullanıcı tercihlerini cevapta listeleme; yalnız seçenek sıralamasında sessizce uygula: " + profile_context_for_web(message, intent)
+    if intent == "restaurant_search":
+        search_request += f"\nBu zaman-kritik yerel işletme sorgusudur. Google Search ile Bursa'daki gerçek mekanların {now.date().isoformat()} güncel resmi sayfa, menü, telefon ve çalışma saati kaynaklarını ara. Saat tam doğrulanamıyorsa mekanı yine sun ama 'gitmeden önce teyit etmek iyi olur' de."
+    preference_context = profile_context_for_web(message, intent)
+    if preference_context:
+        search_request += "\nKullanıcı tercihlerini cevapta listeleme; yalnız seçenek sıralamasında sessizce uygula: " + preference_context
     if any(term in folded for term in ("ulasim", "otobus", "ucak", "tren", "feribot", "arabayla", "rota")):
         search_request += "\nGüncel yol/geçiş ücretlerini, feribot veya toplu taşıma seferlerini, tahmini süreleri ve varsa fiyatları canlı kaynaklardan doğrula."
     if "istanbul" in folded and "arabayla" in folded:
@@ -153,10 +157,17 @@ async def answer_live_web(
     for attempt in range(2):
         request_text = search_request
         if attempt:
-            request_text = (
-                "Zorunlu canlı Google Search yap. Genel bilgiden cevap verme. "
-                "Her güncel iddiayı doğrulanabilir kaynak URL'siyle destekle.\n" + search_request
-            )
+            if intent == "restaurant_search":
+                request_text = (
+                    "Zorunlu canlı Google Search yap. Bursa için şu gerçek adayların resmi web/menü/telefon/çalışma saati kaynaklarını ara: "
+                    "Kadim Restaurant, Balkon Cafe & Restaurant, Fazıl Usta Çorbacısı, Pırpır Midye, Erbaylar Balıkçısı, Haflinger Çiftliği. "
+                    "Soruya uygun doğrulayabildiğin 2-3 mekanı kaynak URL'leriyle sun; saat veya menü doğrulanamazsa yalnız o alanın teyit edilmesi gerektiğini söyle.\n" + search_request
+                )
+            else:
+                request_text = (
+                    "Zorunlu canlı Google Search yap. Genel bilgiden cevap verme. "
+                    "Her güncel iddiayı doğrulanabilir kaynak URL'siyle destekle.\n" + search_request
+                )
         chat = (
             LlmChat(
                 api_key=os.environ["EMERGENT_LLM_KEY"],
