@@ -101,15 +101,23 @@ def route_message(message: str, now: datetime) -> RouteDecision:
         return RouteDecision("calendar_action", "calendar", action="delete", **base)
     if any(term in folded for term in ("gorev olarak ekle", "gorev ekle", "yapilacaklara ekle")):
         return RouteDecision("task_action", "sheets", target_tab="İşler", action="create", **base)
-    if "tamamlandi" in folded and any(term in folded for term in ("gorev", "bilet", "isaretle")):
+    if any(term in folded for term in ("tamamla", "tamamlandi", "tamamlandı")) and any(term in folded for term in ("gorev", "bilet", "is", "mekan")):
         return RouteDecision("task_action", "sheets", target_tab="İşler", action="complete", **base)
-    if destructive and any(term in folded for term in ("gorev", "is")):
+    if any(term in folded for term in ("kapat", "kapali yap", "kapalı yap")) and any(term in folded for term in ("gorev", "is", "bilet", "mekan")):
+        return RouteDecision("task_action", "sheets", target_tab="İşler", action="close", **base)
+    if any(term in folded for term in ("tekrar ac", "yeniden ac", "gorevi ac")):
+        return RouteDecision("task_action", "sheets", target_tab="İşler", action="reopen", **base)
+    if destructive and any(term in folded for term in ("gorev", "is", "bilet", "mekan")):
         return RouteDecision("task_action", "sheets", target_tab="İşler", action="delete", **base)
+    if any(term in folded for term in ("gorevi hakkinda", "gorev hakkinda", "workspace'te kayitli bilgileri", "workspace te kayitli bilgileri")):
+        return RouteDecision("sheets_read", "sheets", target_tab="İşler", **base)
 
-    if "drive" in folded:
-        return RouteDecision("drive_read", "drive", **base)
+    if ("belge" in folded or "dokuman" in folded or "docs" in folded) and "drive" in folded:
+        return RouteDecision("docs_read", "docs", target_document=_document_title(message), **base)
     if "docs" in folded or "dokuman" in folded or "belge" in folded:
         return RouteDecision("docs_read", "docs", target_document=_document_title(message), **base)
+    if "drive" in folded:
+        return RouteDecision("drive_read", "drive", **base)
     if "gmail" in folded or re.search(r"\bmail", folded):
         return RouteDecision("gmail_read", "gmail", **base)
     target_tab = next((tab for tab in ("Projeler", "İşler", "Rutinler") if fold_turkish(tab) in folded), None)
@@ -131,7 +139,7 @@ def route_message(message: str, now: datetime) -> RouteDecision:
         return RouteDecision(provider_intent, "web", provider=provider_group or provider, requires_web=True, **base)
 
     planning = any(term in folded for term in ("plan hazirla", "planla", "alternatif hazirla"))
-    if planning and any(term in folded for term in ("dogum gun", "butce", "surpriz")):
+    if planning and not any(term in folded for term in ("fiyat", "ucret", "bilet", "sefer", "guncel", "arastir", "internetten")):
         return RouteDecision("planning", "general_llm", **base)
 
     if any(term in folded for term in ("tiyatral nikah is", "nikah islerim", "yaklasan nikah", "is listemi", "gorevlerim", "islerim", "projelerim")):
@@ -152,6 +160,12 @@ def route_message(message: str, now: datetime) -> RouteDecision:
 
     if any(term in folded for term in ("musait miyim", "bos muyum", "plan koyabilir miyim", "takvimimde bir sey var mi", "programim var mi")):
         return RouteDecision("availability", "calendar", **base)
+    if any(term in folded for term in (
+        "bugunku 3 onceligim", "bugun 3 onceligim", "bugunku onceliklerim",
+        "bugun onceliklerim", "bugun neye odaklanmaliyim"
+    )):
+        return RouteDecision("weekly_priorities", "workspace", **base)
+
     if any(term in folded for term in ("brifing", "briefing", "ne yapmaliyim", "kacirma risk", "onemli is")):
         if "kacirma risk" in folded or "onumuzdeki birkac gun" in folded:
             from datetime import timedelta
@@ -167,7 +181,10 @@ def route_message(message: str, now: datetime) -> RouteDecision:
     if any(term in folded for term in ("takvimimde", "programim", "ne isim var", "nikah saat kac", "etkinligim")) or temporal.target_date:
         return RouteDecision("calendar_date_query", "calendar", **base)
 
-    direct_memory = any(term in folded for term in ("dogum gun", "dogum gunum", "hangi corbalari severim", "arabam ne", "meslegim ne"))
+    direct_memory = any(term in folded for term in (
+        "dogum gun", "dogum gunum", "hangi corbalari severim", "arabam ne",
+        "meslegim ne", "mesleklerim neler", "ben kimim", "hakkimda ne biliyorsun"
+    ))
     if direct_memory:
         return RouteDecision("personal_memory", "memory", **base)
     return RouteDecision("general", "general_llm", **base)

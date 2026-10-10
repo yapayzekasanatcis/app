@@ -65,8 +65,8 @@ openai_client = AsyncOpenAI(
     api_key=EMERGENT_LLM_KEY,
     base_url=os.environ["OPENAI_BASE_URL"]
 )
-NOVA_TTS_PRIMARY_VOICE = "nova"
-NOVA_TTS_FALLBACK_VOICE = "marin"
+NOVA_TTS_PRIMARY_VOICE = "marin"
+NOVA_TTS_FALLBACK_VOICE = "nova"
 NOVA_TTS_SPEED = 1.09
 NOVA_TTS_STYLE = "female-executive-assistant-natural-tr"
 NOVA_TTS_INSTRUCTIONS = (

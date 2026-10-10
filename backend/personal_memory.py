@@ -124,7 +124,10 @@ def personal_memory_reply(message: str, now: datetime) -> Optional[dict]:
     if "arabam" in folded or "aracim" in folded:
         return {"intent": "personal_memory", "reply": "Aracın Fiat Egea, Bora."}
 
-    if "ben kimim" in folded or "meslegim" in folded:
+    if any(term in folded for term in (
+        "ben kimim", "meslegim", "mesleklerim", "ne is yapiyorum",
+        "hakkimda ne biliyorsun"
+    )):
         professions = ", ".join(BORA_PROFILE["professions"])
         return {"intent": "personal_memory", "reply": f"Sen Bora Ünsal'sın; {professions} olarak çalışıyorsun ve Bursa'da yaşıyorsun."}
 

@@ -8,14 +8,35 @@ from response_composer import compose_availability, meta_reply
 from workspace_data import rows_to_dicts
 
 
-def _rows_summary(tab: str, rows: list) -> str:
+def _rows_summary(tab: str, rows: list, message: str = "") -> str:
     records = rows_to_dicts(rows)
     if not records:
         return f"Bora, NOVA İş Merkezi’ndeki {tab} sayfasında kayıt göremiyorum."
+
+    folded = fold_turkish(message)
+    if tab == "İşler" and any(term in folded for term in ("gorevi hakkinda", "gorev hakkinda", "kayitli bilgileri")):
+        stop = {
+            "gorevi", "gorev", "hakkinda", "bana", "sadece", "workspace",
+            "kayitli", "bilgileri", "soyle", "internette", "arastirma", "yapma"
+        }
+        tokens = [
+            token for token in folded.replace("'", " ").split()
+            if len(token) >= 4 and token not in stop
+        ]
+        matches = []
+        for record in records:
+            haystack = fold_turkish(" ".join(str(value) for value in record.values()))
+            score = sum(1 for token in tokens if token in haystack)
+            if score:
+                matches.append((score, record))
+        if matches:
+            matches.sort(key=lambda item: item[0], reverse=True)
+            records = [matches[0][1]]
+
     lines = []
     for record in records[:8]:
         values = [str(value) for value in record.values() if value]
-        lines.append("- " + " | ".join(values[:4]))
+        lines.append("- " + " | ".join(values))
     return f"Bora, NOVA İş Merkezi · {tab} sayfasındaki kayıtlar:\n" + "\n".join(lines)
 
 
@@ -58,7 +79,7 @@ async def execute_read_connector(decision, message: str, db, user_id: str, regis
         data = await gint.get_sheet_tab_data(db, user_id, tab)
         if not data:
             return {"reply": f"Bora, NOVA İş Merkezi’nde {tab} sayfasını bulamadım.", "source": "Google Sheets", "events": []}
-        return {"reply": _rows_summary(tab, data["rows"]), "source": f"Google Sheets · {tab}", "events": []}
+        return {"reply": _rows_summary(tab, data["rows"], message), "source": f"Google Sheets · {tab}", "events": []}
     if decision.intent == "personal_work":
         start = decision.range_start or decision.target_date
         if start is None:
