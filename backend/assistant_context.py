@@ -304,9 +304,9 @@ def _priority_reply(today: datetime, events: list, tasks: list[dict], projects: 
 
     for project in _project_focus(projects):
         status = fold_turkish(project.get("Durum", ""))
-        project = project.get("Proje", "")
+        project_name = project.get("Proje", "")
         next_step = project.get("Sonraki Adım", "")
-        sentence = f"{project} için sıradaki adım: {next_step}."
+        sentence = f"{project_name} için sıradaki adım: {next_step}."
         candidates.append({"score": 120 if status == "bekliyor" else 90, "label": sentence})
 
     ranked = sorted(candidates, key=lambda item: item["score"], reverse=True)[:3]
