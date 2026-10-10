@@ -138,7 +138,10 @@ def route_message(message: str, now: datetime) -> RouteDecision:
             provider_intent = "restaurant_search"
         return RouteDecision(provider_intent, "web", provider=provider_group or provider, requires_web=True, **base)
 
-    planning = any(term in folded for term in ("plan hazirla", "planla", "alternatif hazirla"))
+    planning = any(term in folded for term in (
+        "plan hazirla", "plani hazirla", "planla", "alternatif hazirla",
+        "gunubirlik gezi", "gunluk gezi"
+    ))
     if planning and not any(term in folded for term in ("fiyat", "ucret", "bilet", "sefer", "guncel", "arastir", "internetten")):
         return RouteDecision("planning", "general_llm", **base)
 
