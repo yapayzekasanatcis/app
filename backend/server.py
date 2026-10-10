@@ -534,7 +534,10 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
             logger.error("Chat provider error type=%s", type(exc).__name__)
             raise HTTPException(500, "NOVA şu anda yanıt veremiyor")
     if package.get("intent") in LIVE_WEB_INTENTS:
-        current_sensitive = any(term in body.message.casefold() for term in ("fiyat", "ücret", "tarife", "maliyet", "güncel"))
+        # Live-world answers are always freshness-sensitive. This prevents
+        # stale historical prices/tariffs from being presented as current
+        # even when the user did not explicitly type "fiyat" or "güncel".
+        current_sensitive = True
         target_year = decision.target_date.year if decision.target_date else now.year
         answer = apply_freshness_guard(answer, target_year, current_sensitive)
         answer = ensure_requested_items(answer, decision.requested_items)

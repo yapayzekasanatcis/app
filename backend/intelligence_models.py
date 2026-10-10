@@ -81,6 +81,61 @@ def _annotation_sources(raw, content: str = "") -> list[dict]:
     return sources[:5]
 
 
+def _required_source_domains(folded: str) -> list[str]:
+    """Domains explicitly required by the user's request."""
+    rules = (
+        ("mediamarkt", "mediamarkt"),
+        ("hepsiburada", "hepsiburada"),
+        ("trendyol", "trendyol"),
+        ("hotels.com", "hotels"),
+        ("obilet", "obilet"),
+        ("flypgs", "flypgs"),
+        ("pegasus", "flypgs"),
+        ("turkishairlines", "turkishairlines"),
+        ("thy", "turkishairlines"),
+        ("ajet", "ajet"),
+        ("tcdd", "tcdd"),
+        ("budo", "budo"),
+        ("ido", "ido"),
+        ("cinetime", "cinetime"),
+        ("yemeksepeti", "yemeksepeti"),
+    )
+    return [domain for marker, domain in rules if marker in folded]
+
+
+def _sources_satisfy_request(sources: list[dict], folded: str) -> bool:
+    required = _required_source_domains(folded)
+    if not required:
+        return bool(sources)
+    urls = " ".join(str(item.get("url", "")).lower() for item in sources)
+    return all(domain in urls for domain in required)
+
+
+def _finish_reason(raw) -> str:
+    """Return provider finish reason without assuming one SDK response shape."""
+    try:
+        choice = raw.choices[0]
+        reason = getattr(choice, "finish_reason", None)
+        if reason is None and hasattr(choice, "model_dump"):
+            reason = choice.model_dump().get("finish_reason")
+        return str(reason or "").lower()
+    except Exception:
+        return ""
+
+
+def _looks_truncated(answer: str, raw) -> bool:
+    """Detect provider token-limit truncation and obvious long unfinished output."""
+    reason = _finish_reason(raw)
+    if any(marker in reason for marker in ("length", "max_token", "max_output")):
+        return True
+
+    text = (answer or "").rstrip()
+    if not text or len(text) < 1200:
+        return False
+
+    return not text.endswith((".", "!", "?", ")", "]"))
+
+
 def _render_sources(answer: str, sources: list[dict]) -> str:
     if not sources:
         return answer
@@ -183,6 +238,22 @@ async def answer_live_web(
             answer = (response.content or "").strip()
             sources = _annotation_sources(response.raw, answer)
             if answer and sources:
+                if not _sources_satisfy_request(sources, folded) and attempt == 0:
+                    search_request = (
+                        "Kullanıcının açıkça istediği kaynakları atlama. "
+                        "İstenen sağlayıcıların her biri için doğrulanabilir gerçek kaynak URL'si bul. "
+                        "Bulamadığın sağlayıcı için veri uydurma; açıkça doğrulanamadığını söyle.\n"
+                        + search_request
+                    )
+                    continue
+                if _looks_truncated(answer, response.raw) and attempt == 0:
+                    search_request = (
+                        "Önceki yanıt çıktı sınırına takıldı. Aynı araştırmayı yeniden yap; "
+                        "cevabı daha kısa tut ama kullanıcının istediği bütün seçenekleri, "
+                        "fiyat/saat/süre gibi kritik alanları eksiksiz bitir. Yarım cümle bırakma.\n"
+                        + search_request
+                    )
+                    continue
                 break
         except Exception as exc:
             logger.error("Live web search attempt=%s failed type=%s", attempt + 1, type(exc).__name__)
