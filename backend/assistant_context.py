@@ -255,66 +255,66 @@ def _parse_due_date(value: str) -> Optional[date]:
 
 def _priority_reply(today: datetime, events: list, tasks: list[dict], projects: list[dict]) -> str:
     candidates = []
+
     for event in events:
         start = event.get("start", "")
         event_date = date.fromisoformat(start[:10]) if len(start) >= 10 else today.date()
         if event_date < today.date():
             continue
+
         days = (event_date - today.date()).days
         folded_event = fold_turkish(" ".join(str(event.get(key, "")) for key in ("title", "description")))
-        actionable_terms = ("tiyatral", "nikah", "komagene", "toplanti", "prova", "cekim", "klip", "randevu")
+        actionable_terms = ("tiyatral", "nikah", "toplanti", "prova", "cekim", "klip", "randevu")
         if not any(term in folded_event for term in actionable_terms):
             continue
-        if "tiyatral nikah" in folded_event:
-            event_score = 400 - days * 10
-        elif "komagene" in folded_event:
-            event_score = 140 - days * 5
-        else:
-            event_score = 320 - days * 10
-        candidates.append({
-            "score": event_score,
-            "label": f"{_date_label(event_date)} {_event_line(event, include_description=False)}",
-        })
+
+        score = 400 - days * 10 if "tiyatral nikah" in folded_event else 320 - days * 10
+        day_label = "Bugün" if days == 0 else ("Yarın" if days == 1 else f"{event_date.day} {TR_MONTHS[event_date.month - 1]}")
+        time_text = _time_range(event)
+        title = event.get("title", "etkinliğin")
+        location = event.get("location", "")
+        sentence = f"{day_label} {time_text} {title}"
+        if location:
+            sentence += f"; yer: {location}"
+        candidates.append({"score": score, "label": sentence + "."})
 
     grouped_tasks = {}
     for task in tasks:
-        if fold_turkish(task.get("Durum", "")) in {"tamamlandi", "tamam"}:
+        if fold_turkish(task.get("Durum", "")) in {"tamamlandi", "tamam", "kapali"}:
             continue
         due = _parse_due_date(task.get("Tarih / Son Tarih", ""))
         key = (task.get("Alan", ""), due)
         grouped_tasks.setdefault(key, []).append(task)
+
     for (area, due), group in grouped_tasks.items():
         days = (due - today.date()).days if due else 999
-        if days <= 7:
-            score = 240
-        elif days <= 14:
-            score = 170
-        elif days <= 30:
-            score = 80
-        else:
-            score = 20
+        score = 240 if days <= 7 else 170 if days <= 14 else 80 if days <= 30 else 20
         text = " ".join(" ".join(str(value) for value in task.values()) for task in group)
-        folded = fold_turkish(text)
-        if any(word in folded for word in ("bilet", "mekan", "ulasim", "otel", "rezervasyon")):
+        if any(word in fold_turkish(text) for word in ("bilet", "mekan", "ulasim", "otel", "rezervasyon")):
             score += 30
+
         labels = "; ".join(task.get("İş", "") for task in group)
-        due_label = f"son tarih {due.day} {TR_MONTHS[due.month - 1]}" if due else "tarih belirtilmemiş"
-        candidates.append({"score": score, "label": f"{area}: {labels} ({due_label})"})
+        if due:
+            sentence = f"{due.day} {TR_MONTHS[due.month - 1]}'e kadar {labels}"
+        else:
+            sentence = labels
+        if area:
+            sentence += f" ({area})"
+        candidates.append({"score": score, "label": sentence + "."})
 
     for project in _project_focus(projects):
         status = fold_turkish(project.get("Durum", ""))
-        candidates.append({
-            "score": 120 if status == "bekliyor" else 90,
-            "label": f"{project.get('Proje')}: {project.get('Sonraki Adım')} ({project.get('Durum')})",
-        })
+        project = project.get("Proje", "")
+        next_step = project.get("Sonraki Adım", "")
+        sentence = f"{project} için sıradaki adım: {next_step}."
+        candidates.append({"score": 120 if status == "bekliyor" else 90, "label": sentence})
 
     ranked = sorted(candidates, key=lambda item: item["score"], reverse=True)[:3]
     if not ranked:
-        return "Bora, bu hafta için gerçek takvim veya İş Merkezi verisinde öncelik görünmüyor."
-    lines = [f"{index}. {item['label']}" for index, item in enumerate(ranked, 1)]
-    project_note = _project_sentence(projects)
-    return "Bora, bu haftanın en önemli üç işi şöyle:\n" + "\n".join(lines) + (f"\n\n{project_note}" if project_note else "")
+        return "Bora, şu anda takvim ve İş Merkezi verilerinde acil bir öncelik görünmüyor."
 
+    lines = [f"{index}. {item['label']}" for index, item in enumerate(ranked, 1)]
+    return "Bora, şu anda öncelik sıram şöyle:\n" + "\n".join(lines)
 
 def service_weekly_priorities(today: datetime, events: list, tasks: list[dict], projects: list[dict]) -> str:
     return _priority_reply(today, events, tasks, projects)
