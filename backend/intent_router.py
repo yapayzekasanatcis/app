@@ -128,6 +128,16 @@ def route_message(message: str, now: datetime) -> RouteDecision:
     if "gmail" in folded or re.search(r"\bmail", folded):
         return RouteDecision("gmail_read", "gmail", **base)
     target_tab = next((tab for tab in ("Projeler", "İşler", "Rutinler") if fold_turkish(tab) in folded), None)
+
+    workspace_request = "workspace" in folded and any(
+        term in folded for term in (
+            "kontrol et", "durumu", "durumunu", "gorev", "gorevin",
+            "kayitli", "bilgileri", "is merkezi"
+        )
+    )
+    if workspace_request:
+        return RouteDecision("sheets_read", "sheets", target_tab="İşler", **base)
+
     if "nova is merkezi" in folded or target_tab:
         return RouteDecision("sheets_read", "sheets", target_tab=target_tab, **base)
 

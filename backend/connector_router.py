@@ -14,10 +14,14 @@ def _rows_summary(tab: str, rows: list, message: str = "") -> str:
         return f"Bora, NOVA İş Merkezi’ndeki {tab} sayfasında kayıt göremiyorum."
 
     folded = fold_turkish(message)
-    if tab == "İşler" and any(term in folded for term in ("gorevi hakkinda", "gorev hakkinda", "kayitli bilgileri")):
+    if tab == "İşler" and any(term in folded for term in (
+        "gorevi hakkinda", "gorev hakkinda", "kayitli bilgileri",
+        "durumunu", "durumu", "kontrol et"
+    )):
         stop = {
             "gorevi", "gorev", "hakkinda", "bana", "sadece", "workspace",
-            "kayitli", "bilgileri", "soyle", "internette", "arastirma", "yapma"
+            "kayitli", "bilgileri", "soyle", "internette", "arastirma", "yapma",
+            "durumunu", "durumu", "kontrol", "workspace", "workspace'ten"
         }
         tokens = [
             token for token in folded.replace("'", " ").split()
