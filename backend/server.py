@@ -85,7 +85,6 @@ def prepare_tts_text(value: str) -> str:
     text = re.sub(r"https?://[^\s)\]>]+", "", text)
     text = re.sub(r"【[^】]+】|\[(?:\d+|cite[^\]]*)\]", "", text, flags=re.IGNORECASE)
 
-    # Visual/database notation -> spoken phrasing.
     text = re.sub(
         r"\b([01]?\d|2[0-3]):([0-5]\d)\s*[–—-]\s*([01]?\d|2[0-3]):([0-5]\d)\b",
         r"\1:\2 ile \3:\4 arasında",
@@ -113,8 +112,6 @@ def prepare_tts_text(value: str) -> str:
 
     text = re.sub(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", spoken_time, text)
     text = re.sub(r"\bsaat\s+saat\b", "saat", text, flags=re.IGNORECASE)
-
-    # Give the TTS model sentence-sized thought groups instead of database chunks.
     text = re.sub(r"\s*\n+\s*", ". ", text)
     text = re.sub(r"\s*:\s*", ". ", text)
     text = re.sub(r"\s*,\s*,+\s*", ", ", text)
