@@ -35,7 +35,19 @@ def _rows_summary(tab: str, rows: list, message: str = "") -> str:
                 matches.append((score, record))
         if matches:
             matches.sort(key=lambda item: item[0], reverse=True)
-            records = [matches[0][1]]
+            record = matches[0][1]
+
+            task_name = record.get("İş", "Görev")
+            status = record.get("Durum", "")
+            due = record.get("Tarih / Son Tarih", "")
+            note = record.get("Not", "")
+
+            reply = f"Bora, {task_name} görevi {status or 'durumu belirtilmemiş'} görünüyor."
+            if due:
+                reply += f" Son tarih {due}."
+            if note:
+                reply += f" Notta şu bilgi var: {note}"
+            return reply
 
     lines = []
     for record in records[:8]:
