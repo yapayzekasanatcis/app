@@ -24,6 +24,11 @@ class ActionResult:
 
 
 def _calendar_title(message: str) -> str:
+    folded = message.casefold()
+
+    if ("gelin" in folded and "damat" in folded) or "gelin damat" in folded:
+        return "Gelin-Damat Görüşmesi"
+
     text = message.strip()
 
     quoted = re.search(r'["“](.+?)["”]', text)
