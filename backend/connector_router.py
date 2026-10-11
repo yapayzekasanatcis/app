@@ -42,11 +42,27 @@ def _rows_summary(tab: str, rows: list, message: str = "") -> str:
             due = record.get("Tarih / Son Tarih", "")
             note = record.get("Not", "")
 
-            reply = f"Bora, {task_name} görevi {status or 'durumu belirtilmemiş'} görünüyor."
+            status_folded = fold_turkish(status)
+
+            if status_folded in {"tamam", "tamamlandi"}:
+                reply = f"Bora, {task_name} görevi tamamlandı."
+            elif status_folded == "kapali":
+                reply = f"Bora, {task_name} görevi kapalı."
+            elif status_folded == "bekliyor":
+                reply = f"Bora, {task_name} görevi hâlâ bekliyor."
+            else:
+                reply = f"Bora, {task_name} görevinin durumu {status or 'belirtilmemiş'}."
+
             if due:
-                reply += f" Son tarih {due}."
+                clean_due = due.replace(" öncesi", "")
+                reply += f" Hedef tarih {clean_due}."
+
             if note:
-                reply += f" Notta şu bilgi var: {note}"
+                natural_note = note
+                natural_note = natural_note.replace("Alanya varış", "Alanya'ya varış")
+                natural_note = natural_note.replace("Antalya varış", "Antalya'ya varış")
+                reply += f" Notta da {natural_note}"
+
             return reply
 
     lines = []
