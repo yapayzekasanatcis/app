@@ -109,7 +109,22 @@ def route_message(message: str, now: datetime) -> RouteDecision:
         "randevuyu tasi", "randevuyu taşı",
         "saatine al", "saate al",
     )
-    if any(term in folded for term in calendar_update_terms):
+    calendar_update_target = any(
+        term in folded for term in (
+            "gorusme", "görüşme", "randevu", "etkinlik",
+            "nikah", "nikâh", "takvim"
+        )
+    )
+    calendar_update_action = any(
+        term in folded for term in (
+            "tasi", "taşı", "ertele", "guncelle", "güncelle",
+            "saate al", "saatine al"
+        )
+    )
+
+    if any(term in folded for term in calendar_update_terms) or (
+        calendar_update_target and calendar_update_action
+    ):
         return RouteDecision("calendar_action", "calendar", action="update", **base)
 
     calendar_delete_target = any(
