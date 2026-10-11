@@ -24,7 +24,7 @@ def _time(value: str) -> str:
 
 def _short_location(value: str) -> str:
     if not value:
-        return "konumu belirtilmemiş yerde"
+        return "konumu belirtilmemiş"
     return value.split(",")[0].strip()
 
 
