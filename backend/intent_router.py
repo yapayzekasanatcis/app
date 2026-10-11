@@ -241,6 +241,17 @@ def route_message(message: str, now: datetime) -> RouteDecision:
     if any(term in folded for term in ("takvimimde", "programim", "ne isim var", "nikah saat kac", "etkinligim")) or temporal.target_date:
         return RouteDecision("calendar_date_query", "calendar", **base)
 
+    birthday_recommendation = (
+        "dogum gun" in folded
+        and any(term in folded for term in (
+            "ne hediye", "hediye al", "ne alayim", "ne almalıyım",
+            "ne almaliyim", "oner", "öner", "fikir", "surpriz", "sürpriz"
+        ))
+    )
+
+    if birthday_recommendation:
+        return RouteDecision("general", "general_llm", **base)
+
     direct_memory = any(term in folded for term in (
         "dogum gun", "dogum gunum", "hangi corbalari severim", "arabam ne",
         "meslegim ne", "mesleklerim neler", "ben kimim", "hakkimda ne biliyorsun"
