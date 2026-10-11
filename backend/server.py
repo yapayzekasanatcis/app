@@ -79,11 +79,23 @@ NOVA_TTS_INSTRUCTIONS = (
 
 
 def prepare_tts_text(value: str) -> str:
-    """Remove visual citations and normalize Turkish clock speech."""
+    """Turn visual assistant text into natural Turkish speech."""
     text = re.split(r"\b(?:Kaynaklar|Sources)\s*:", value.strip(), maxsplit=1, flags=re.IGNORECASE)[0]
     text = re.sub(r"\[([^\]]+)\]\(https?://[^)]+\)", r"\1", text)
     text = re.sub(r"https?://[^\s)\]>]+", "", text)
     text = re.sub(r"【[^】]+】|\[(?:\d+|cite[^\]]*)\]", "", text, flags=re.IGNORECASE)
+
+    # Visual/database notation -> spoken phrasing.
+    text = re.sub(
+        r"\b([01]?\d|2[0-3]):([0-5]\d)\s*[–—-]\s*([01]?\d|2[0-3]):([0-5]\d)\b",
+        r"\1:\2 ile \3:\4 arasında",
+        text,
+    )
+    text = re.sub(r"\byer\s*:\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bsıradaki adım\s*:\s*", "sıradaki adım şu. ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*\(Tiyatral Nik[aâ]h\)\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*[—–]\s*", ", ", text)
+    text = re.sub(r"\s*;\s*", ". ", text)
 
     ones = ["sıfır", "bir", "iki", "üç", "dört", "beş", "altı", "yedi", "sekiz", "dokuz"]
     tens = ["", "on", "yirmi", "otuz", "kırk", "elli"]
@@ -101,9 +113,12 @@ def prepare_tts_text(value: str) -> str:
 
     text = re.sub(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", spoken_time, text)
     text = re.sub(r"\bsaat\s+saat\b", "saat", text, flags=re.IGNORECASE)
+
+    # Give the TTS model sentence-sized thought groups instead of database chunks.
     text = re.sub(r"\s*\n+\s*", ". ", text)
-    text = re.sub(r"\s*[—–]\s*", ", ", text)
-    text = re.sub(r"\s*;\s*", ", ", text)
+    text = re.sub(r"\s*:\s*", ". ", text)
+    text = re.sub(r"\s*,\s*,+\s*", ", ", text)
+    text = re.sub(r"\.{2,}", ".", text)
     text = re.sub(r"([.!?])\1+", r"\1", text)
     return re.sub(r"\s+", " ", text).strip()
 

@@ -313,8 +313,17 @@ def _priority_reply(today: datetime, events: list, tasks: list[dict], projects: 
     if not ranked:
         return "Bora, şu anda takvim ve İş Merkezi verilerinde acil bir öncelik görünmüyor."
 
-    lines = [f"{index}. {item['label']}" for index, item in enumerate(ranked, 1)]
-    return "Bora, şu anda öncelik sıram şöyle:\n" + "\n".join(lines)
+    first = ranked[0]["label"].strip()
+    second = ranked[1]["label"].strip() if len(ranked) > 1 else ""
+    third = ranked[2]["label"].strip() if len(ranked) > 2 else ""
+
+    parts = [f"Bora, bugün için önce {first}"]
+    if second:
+        parts.append(f"Bunun yanında {second}")
+    if third:
+        parts.append(f"Bir de {third}")
+    parts.append("İstersen önce en yakın işi birlikte netleştirelim.")
+    return " ".join(parts)
 
 def service_weekly_priorities(today: datetime, events: list, tasks: list[dict], projects: list[dict]) -> str:
     return _priority_reply(today, events, tasks, projects)
