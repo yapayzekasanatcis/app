@@ -97,7 +97,21 @@ def personal_memory_reply(message: str, now: datetime) -> Optional[dict]:
         return {"intent": "personal_memory", "reply": _upcoming_family_birthday(today)}
 
     subject = _birthday_subject(folded)
-    if subject and ("dogum" in folded or "kac gun" in folded or "ne kadar kaldi" in folded):
+
+    birthday_recommendation = (
+        "dogum" in folded
+        and any(term in folded for term in (
+            "ne hediye", "hediye al", "ne alayim", "ne almaliyim",
+            "oner", "öner", "fikir", "surpriz", "sürpriz",
+            "ne yapalim", "ne yapalım"
+        ))
+    )
+
+    if (
+        subject
+        and not birthday_recommendation
+        and ("dogum" in folded or "kac gun" in folded or "ne kadar kaldi" in folded)
+    ):
         return {"intent": "personal_memory", "reply": _birthday_reply(subject, folded, today)}
 
     if "corba" in folded and any(word in folded for word in ("sev", "hangi", "tercih")):
