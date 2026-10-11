@@ -41,7 +41,12 @@ SCOPES = [
 ]
 
 CALENDAR_NAME = "NOVA ASİSTAN — Özel Takvim"
-SELECTED_CALENDAR_NAMES = (CALENDAR_NAME, "Tiyatral Nikâh")
+SECRET_CALENDAR_NAME = "NOVA ASİSTAN — Gizli"
+SELECTED_CALENDAR_NAMES = (
+    CALENDAR_NAME,
+    "Tiyatral Nikâh",
+    SECRET_CALENDAR_NAME,
+)
 SHEET_NAME = "NOVA İş Merkezi"
 DRIVE_FOLDER_NAME = "NOVA ASİSTAN"
 DOC_NAME = "NOVA ASİSTAN — Çekirdek Kurallar ve Rutinler"
@@ -462,9 +467,28 @@ def _column_letter(index: int) -> str:
 
 def _write_calendar_source(cal, message: str) -> dict:
     folded = message.casefold()
-    wanted = "Tiyatral Nikâh" if any(
+
+    secret_terms = (
+        "gizli",
+        "sürpriz",
+        "surpriz",
+        "tuğba görmesin",
+        "tugba gormesin",
+        "hediye",
+        "doğum günü hazırlığı",
+        "dogum gunu hazirligi",
+        "özel plan",
+        "ozel plan",
+    )
+
+    if any(term in folded for term in secret_terms):
+        wanted = SECRET_CALENDAR_NAME
+    elif any(
         term in folded for term in ("tiyatral", "nikâh", "nikah", "gelin", "damat")
-    ) else CALENDAR_NAME
+    ):
+        wanted = "Tiyatral Nikâh"
+    else:
+        wanted = CALENDAR_NAME
 
     sources = _find_selected_calendars(cal)
     exact = next((item for item in sources if item.get("summary") == wanted), None)
