@@ -8,9 +8,16 @@ import google_integration as gint
 _CACHE: dict[str, dict] = {}
 _TTL_SECONDS = 300
 
-CALENDAR_READ = "https://www.googleapis.com/auth/calendar.readonly"
+CALENDAR_READ = {
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar",
+    "https://www.googleapis.com/auth/calendar.events",
+}
 CALENDAR_WRITE = {"https://www.googleapis.com/auth/calendar", "https://www.googleapis.com/auth/calendar.events"}
-SHEETS_READ = "https://www.googleapis.com/auth/spreadsheets.readonly"
+SHEETS_READ = {
+    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
+}
 SHEETS_WRITE = "https://www.googleapis.com/auth/spreadsheets"
 DRIVE_READ = "https://www.googleapis.com/auth/drive.readonly"
 DOCS_READ = "https://www.googleapis.com/auth/documents.readonly"
@@ -32,9 +39,9 @@ async def get_capability_registry(db, user_id: str, force: bool = False) -> dict
     scopes = set(token.get("scopes") or [])
     connected = bool(token)
     registry = {
-        "calendar.read": _entry(connected and CALENDAR_READ in scopes, "granted" if CALENDAR_READ in scopes else "not_granted"),
+        "calendar.read": _entry(connected and bool(scopes & CALENDAR_READ), "granted" if scopes & CALENDAR_READ else "not_granted"),
         "calendar.write": _entry(bool(scopes & CALENDAR_WRITE), "granted" if scopes & CALENDAR_WRITE else "not_granted"),
-        "sheets.read": _entry(connected and SHEETS_READ in scopes, "granted" if SHEETS_READ in scopes else "not_granted"),
+        "sheets.read": _entry(connected and bool(scopes & SHEETS_READ), "granted" if scopes & SHEETS_READ else "not_granted"),
         "sheets.write": _entry(SHEETS_WRITE in scopes, "granted" if SHEETS_WRITE in scopes else "not_granted"),
         "drive.read": _entry(connected and DRIVE_READ in scopes, "granted" if DRIVE_READ in scopes else "not_granted"),
         "docs.read": _entry(connected and DOCS_READ in scopes, "granted" if DOCS_READ in scopes else "not_granted"),

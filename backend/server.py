@@ -482,7 +482,13 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
         if decision.intent in special_intents or decision.action:
             registry = await get_capability_registry(db, user["id"])
         if decision.action:
-            action = await execute_action(decision, registry or {})
+            action = await execute_action(
+                decision,
+                registry or {},
+                db,
+                user["id"],
+                body.message,
+            )
             action_result = action.as_dict()
             special_result = {"reply": action.reply, "source": "Capability Registry + Action Executor", "events": []}
         elif decision.intent in special_intents:

@@ -30,9 +30,9 @@ ADMIN_EMAILS = {email.strip().lower() for email in os.environ["ADMIN_EMAILS"].sp
 fernet = Fernet(TOKEN_ENCRYPTION_KEY.encode()) if TOKEN_ENCRYPTION_KEY else None
 
 SCOPES = [
-    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar",
     "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
+    "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/documents.readonly",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
@@ -448,6 +448,176 @@ async def get_doc_text_by_name(db, user_id: str, document_name: str):
 async def get_core_doc_text(db, user_id: str):
     return await get_doc_text_by_name(db, user_id, DOC_NAME)
 
+
+
+def _column_letter(index: int) -> str:
+    result = ""
+    value = index + 1
+    while value:
+        value, rem = divmod(value - 1, 26)
+        result = chr(65 + rem) + result
+    return result
+
+
+def _write_calendar_source(cal, message: str) -> dict:
+    folded = message.casefold()
+    wanted = "Tiyatral Nikâh" if any(
+        term in folded for term in ("tiyatral", "nikâh", "nikah", "gelin", "damat")
+    ) else CALENDAR_NAME
+
+    sources = _find_selected_calendars(cal)
+    exact = next((item for item in sources if item.get("summary") == wanted), None)
+    if exact:
+        return exact
+
+    named = _find_named_calendar(cal)
+    if named:
+        return named
+
+    primary = next((item for item in sources if item.get("primary")), None)
+    return primary or {"id": "primary", "summary": "primary"}
+
+
+async def create_calendar_event(
+    db,
+    user_id: str,
+    title: str,
+    target_date: date,
+    target_time: str,
+    message: str = "",
+    duration_minutes: int = 60,
+):
+    if not target_date or not target_time:
+        return None
+
+    hour, minute = map(int, target_time.split(":"))
+    start_dt = datetime(
+        target_date.year, target_date.month, target_date.day,
+        hour, minute, tzinfo=ISTANBUL_TZ
+    )
+    end_dt = start_dt + timedelta(minutes=duration_minutes)
+
+    creds = await credentials_for(db, user_id)
+    cal = _service("calendar", "v3", creds)
+    source = _write_calendar_source(cal, message)
+
+    body = {
+        "summary": title.strip() or "NOVA etkinliği",
+        "start": {
+            "dateTime": start_dt.isoformat(),
+            "timeZone": "Europe/Istanbul",
+        },
+        "end": {
+            "dateTime": end_dt.isoformat(),
+            "timeZone": "Europe/Istanbul",
+        },
+    }
+
+    created = _http(cal.events().insert(
+        calendarId=source["id"],
+        body=body,
+        sendUpdates="none",
+    ))
+
+    verified = _http(cal.events().get(
+        calendarId=source["id"],
+        eventId=created["id"],
+    ))
+
+    clear_user_cache(user_id)
+    return {
+        "id": verified.get("id"),
+        "title": verified.get("summary"),
+        "start": _to_istanbul_iso(
+            verified.get("start", {}).get("dateTime")
+            or verified.get("start", {}).get("date")
+        ),
+        "end": _to_istanbul_iso(
+            verified.get("end", {}).get("dateTime")
+            or verified.get("end", {}).get("date")
+        ),
+        "calendar": source.get("summary") or source.get("name") or "Google Calendar",
+    }
+
+
+async def update_task_status(db, user_id: str, message: str, new_status: str):
+    creds = await credentials_for(db, user_id)
+    drive = _service("drive", "v3", creds)
+    sheets = _service("sheets", "v4", creds)
+
+    files = _find_drive_file(
+        drive,
+        SHEET_NAME,
+        "application/vnd.google-apps.spreadsheet",
+    )
+    if not files:
+        return None
+
+    sid = files[0]["id"]
+    response = _http(sheets.spreadsheets().values().get(
+        spreadsheetId=sid,
+        range="İşler",
+        majorDimension="ROWS",
+    ))
+    rows = response.get("values", [])
+    if len(rows) < 2:
+        return None
+
+    headers = rows[0]
+    try:
+        status_col = headers.index("Durum")
+    except ValueError:
+        return None
+
+    stop = {
+        "gorevi", "gorev", "tamamla", "tamamlandi", "tamamlandı",
+        "kapat", "kapali", "kapalı", "yap", "yeniden", "tekrar",
+        "ac", "aç", "bunu", "is", "iş",
+    }
+
+    folded = message.casefold()
+    tokens = [
+        token.strip(".,;:!?()[]{}\"'")
+        for token in folded.split()
+    ]
+    tokens = [t for t in tokens if len(t) >= 4 and t not in stop]
+
+    best = None
+    for row_index, row in enumerate(rows[1:], start=2):
+        haystack = " ".join(str(v) for v in row).casefold()
+        score = sum(1 for token in tokens if token in haystack)
+        if score and (best is None or score > best[0]):
+            best = (score, row_index, row)
+
+    if not best:
+        return None
+
+    _, row_index, row = best
+    cell = f"İşler!{_column_letter(status_col)}{row_index}"
+
+    _http(sheets.spreadsheets().values().update(
+        spreadsheetId=sid,
+        range=cell,
+        valueInputOption="RAW",
+        body={"values": [[new_status]]},
+    ))
+
+    verify = _http(sheets.spreadsheets().values().get(
+        spreadsheetId=sid,
+        range=cell,
+    ))
+    values = verify.get("values", [])
+    verified_status = values[0][0] if values and values[0] else ""
+
+    clear_user_cache(user_id)
+
+    task_name = row[headers.index("İş")] if "İş" in headers and len(row) > headers.index("İş") else "Görev"
+
+    return {
+        "task": task_name,
+        "status": verified_status,
+        "verified": verified_status == new_status,
+    }
 
 # ---------- Router ----------
 def create_router(db, current_user):
