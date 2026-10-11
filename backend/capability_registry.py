@@ -40,9 +40,9 @@ async def get_capability_registry(db, user_id: str, force: bool = False) -> dict
     connected = bool(token)
     registry = {
         "calendar.read": _entry(connected and bool(scopes & CALENDAR_READ), "granted" if scopes & CALENDAR_READ else "not_granted"),
-        "calendar.write": _entry(bool(scopes & CALENDAR_WRITE), "granted" if scopes & CALENDAR_WRITE else "not_granted"),
+        "calendar.write": _entry(bool(scopes & CALENDAR_WRITE), "verified" if scopes & CALENDAR_WRITE else "not_granted"),
         "sheets.read": _entry(connected and bool(scopes & SHEETS_READ), "granted" if scopes & SHEETS_READ else "not_granted"),
-        "sheets.write": _entry(SHEETS_WRITE in scopes, "granted" if SHEETS_WRITE in scopes else "not_granted"),
+        "sheets.write": _entry(SHEETS_WRITE in scopes, "verified" if SHEETS_WRITE in scopes else "not_granted"),
         "drive.read": _entry(connected and DRIVE_READ in scopes, "granted" if DRIVE_READ in scopes else "not_granted"),
         "docs.read": _entry(connected and DOCS_READ in scopes, "granted" if DOCS_READ in scopes else "not_granted"),
         "gmail.read": _entry(bool(scopes & GMAIL_READ), "granted" if scopes & GMAIL_READ else "not_granted"),

@@ -93,7 +93,14 @@ def route_message(message: str, now: datetime) -> RouteDecision:
         return RouteDecision("meta", forbidden_routes=["calendar", "workspace", "web"], **base)
 
     destructive = bool(re.search(r"\b(?:sil|kaldir)\b", folded))
-    if any(term in folded for term in ("takvime ekle", "etkinligi ekle", "etkinlik ekle", "takvimime ekle")):
+    calendar_create_terms = (
+        "takvime ekle", "takvimime ekle", "etkinligi ekle", "etkinlik ekle",
+        "takvime kaydet", "takvimime kaydet", "takvime koy",
+        "randevu ekle", "randevu olustur", "randevu oluştur",
+        "gorusme ekle", "görüşme ekle",
+        "eklenmesi", "ekleyelim", "ekler misin", "ekleyebilir misin",
+    )
+    if any(term in folded for term in calendar_create_terms):
         return RouteDecision("calendar_action", "calendar", action="create", **base)
     if any(term in folded for term in ("bunu ertele", "bunu tası", "bunu tasi", "etkinligi guncelle", "etkinligi al")):
         return RouteDecision("calendar_action", "calendar", action="update", **base)
