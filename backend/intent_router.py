@@ -100,7 +100,18 @@ def route_message(message: str, now: datetime) -> RouteDecision:
         "gorusme ekle", "görüşme ekle",
         "eklenmesi", "ekleyelim", "ekler misin", "ekleyebilir misin",
     )
-    if any(term in folded for term in calendar_create_terms):
+    natural_calendar_create = (
+        decision_has_date_time := (
+            temporal.target_date is not None and temporal.target_time is not None
+        )
+    ) and any(term in folded for term in (
+        "ekle", "kaydet", "olustur", "oluştur", "koy"
+    )) and any(term in folded for term in (
+        "plan", "randevu", "gorusme", "görüşme",
+        "etkinlik", "surpriz", "sürpriz", "hazirlik", "hazırlık"
+    ))
+
+    if any(term in folded for term in calendar_create_terms) or natural_calendar_create:
         return RouteDecision("calendar_action", "calendar", action="create", **base)
     calendar_update_terms = (
         "bunu ertele", "bunu tası", "bunu tasi",

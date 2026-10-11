@@ -50,6 +50,8 @@ def compose_calendar_answer(target: date, events: list[dict], calendar_ok: bool,
             if ceremony:
                 result += f"; nikâh {ceremony.group(1)}’de başlayacak"
             return result.rstrip(";") + "."
+        if location == "konumu belirtilmemiş":
+            return f"Bora, {label}’de {title} var" + (f"; başlangıç {start}." if start else ".")
         return f"Bora, {label}’de {location}’de {title} var" + (f"; başlangıç {start}." if start else ".")
     rendered = []
     for event in events[:5]:
