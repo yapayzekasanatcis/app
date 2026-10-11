@@ -102,9 +102,23 @@ def route_message(message: str, now: datetime) -> RouteDecision:
     )
     if any(term in folded for term in calendar_create_terms):
         return RouteDecision("calendar_action", "calendar", action="create", **base)
-    if any(term in folded for term in ("bunu ertele", "bunu tası", "bunu tasi", "etkinligi guncelle", "etkinligi al")):
+    calendar_update_terms = (
+        "bunu ertele", "bunu tası", "bunu tasi",
+        "etkinligi guncelle", "etkinligi al",
+        "gorusmeyi tasi", "görüşmeyi taşı",
+        "randevuyu tasi", "randevuyu taşı",
+        "saatine al", "saate al",
+    )
+    if any(term in folded for term in calendar_update_terms):
         return RouteDecision("calendar_action", "calendar", action="update", **base)
-    if destructive and "etkinlik" in folded:
+
+    calendar_delete_target = any(
+        term in folded for term in (
+            "etkinlik", "gorusme", "görüşme", "randevu",
+            "takvim", "nikah", "nikâh"
+        )
+    )
+    if destructive and calendar_delete_target:
         return RouteDecision("calendar_action", "calendar", action="delete", **base)
     if any(term in folded for term in ("gorev olarak ekle", "gorev ekle", "yapilacaklara ekle")):
         return RouteDecision("task_action", "sheets", target_tab="İşler", action="create", **base)

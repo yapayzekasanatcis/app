@@ -119,12 +119,78 @@ async def execute_action(decision, registry: dict, db, user_id: str, message: st
                 f"Bora, ekledim. {created['title']} {decision.target_date.strftime('%d.%m.%Y')} saat {spoken_time} için {created['calendar']} takvimine kaydedildi."
             )
 
+        if decision.action == "update":
+            if not decision.target_date:
+                return ActionResult(
+                    "update", capability, False, False,
+                    "Bora, hangi gündeki kaydı değiştireceğimi net söylemen gerekiyor."
+                )
+            if not decision.target_time:
+                return ActionResult(
+                    "update", capability, False, False,
+                    "Bora, yeni saati de söylemen gerekiyor."
+                )
+
+            result = await gint.update_calendar_event_time(
+                db,
+                user_id,
+                decision.target_date,
+                decision.target_time,
+                message,
+            )
+
+            if result.get("status") == "ambiguous":
+                return ActionResult(
+                    "update", capability, False, False,
+                    "Bora, o gün birden fazla benzer kayıt buldum. Yanlış kaydı değiştirmemek için etkinliğin adını biraz daha net söyle."
+                )
+            if result.get("status") != "updated":
+                return ActionResult(
+                    "update", capability, False, False,
+                    "Bora, değiştirmek istediğin takvim kaydını güvenli biçimde bulamadım."
+                )
+
+            return ActionResult(
+                "update", capability, True, True,
+                f"Bora, {result['title']} kaydını saat {result['time']} olarak güncelledim."
+            )
+
+        if decision.action == "delete":
+            if not decision.target_date:
+                return ActionResult(
+                    "delete", capability, False, False,
+                    "Bora, hangi gündeki kaydı sileceğimi net söylemen gerekiyor."
+                )
+
+            result = await gint.delete_calendar_event(
+                db,
+                user_id,
+                decision.target_date,
+                message,
+            )
+
+            if result.get("status") == "ambiguous":
+                return ActionResult(
+                    "delete", capability, False, False,
+                    "Bora, o gün birden fazla benzer kayıt buldum. Yanlış kaydı silmemek için hangisi olduğunu biraz daha net söyle."
+                )
+            if result.get("status") != "deleted":
+                return ActionResult(
+                    "delete", capability, False, False,
+                    "Bora, silmek istediğin takvim kaydını güvenli biçimde bulamadım."
+                )
+
+            return ActionResult(
+                "delete", capability, True, True,
+                f"Bora, {result['title']} kaydını takvimden sildim."
+            )
+
         return ActionResult(
             decision.action or "unknown",
             capability,
             False,
             False,
-            "Bora, takvimde taşıma ve silme işlemlerini henüz güvenli eşleştirme olmadan çalıştırmıyorum."
+            "Bora, bu takvim işlemini henüz güvenli biçimde yapamıyorum."
         )
 
     if decision.intent == "task_action":

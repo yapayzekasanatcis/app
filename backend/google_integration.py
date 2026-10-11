@@ -1,6 +1,7 @@
 """Google OAuth 2.0 + Calendar/Sheets/Drive/Docs read integration."""
 import logging
 import os
+import re
 import time
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
@@ -539,6 +540,219 @@ async def create_calendar_event(
         "calendar": source.get("summary") or source.get("name") or "Google Calendar",
     }
 
+
+
+def _calendar_match_tokens(message: str) -> list[str]:
+    stop = {
+        "ekle", "sil", "kaldir", "kaldır", "tasi", "taşı", "al", "ertele",
+        "guncelle", "güncelle", "bunu", "sunu", "şunu", "etkinlik",
+        "etkinligi", "etkinliği", "takvimden", "takvimde", "saat",
+        "bugun", "bugün", "yarin", "yarın", "randevu", "gorusme", "görüşme",
+    }
+    tokens = re.findall(r"[0-9A-Za-zÇĞİÖŞÜçğıöşü]+", message.casefold())
+    return [
+        token for token in tokens
+        if len(token) >= 4
+        and token not in stop
+        and not token.isdigit()
+        and not re.fullmatch(r"\d{1,2}:\d{2}", token)
+    ]
+
+
+async def _find_calendar_event_for_action(
+    db,
+    user_id: str,
+    target_date: date,
+    message: str,
+):
+    if not target_date:
+        return {"status": "missing_date", "matches": []}
+
+    creds = await credentials_for(db, user_id)
+    cal = _service("calendar", "v3", creds)
+    sources = _find_selected_calendars(cal)
+
+    day_start = datetime.combine(
+        target_date, datetime.min.time(), tzinfo=ISTANBUL_TZ
+    )
+    day_end = day_start + timedelta(days=1)
+
+    tokens = _calendar_match_tokens(message)
+    candidates = []
+
+    for source in sources:
+        result = _http(cal.events().list(
+            calendarId=source["id"],
+            singleEvents=True,
+            orderBy="startTime",
+            timeMin=day_start.isoformat(),
+            timeMax=day_end.isoformat(),
+            timeZone="Europe/Istanbul",
+            maxResults=100,
+            fields="items(id,summary,description,start,end,location,status)"
+        ))
+
+        for event in result.get("items", []):
+            title = event.get("summary", "")
+            haystack = " ".join([
+                title,
+                event.get("description", ""),
+                event.get("location", ""),
+            ]).casefold()
+
+            score = sum(1 for token in tokens if token in haystack)
+
+            start_value = (
+                event.get("start", {}).get("dateTime")
+                or event.get("start", {}).get("date")
+                or ""
+            )
+
+            # Saat de verilmişse eşleşmeye ağırlık ver.
+            requested_times = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", message)
+            if requested_times and "T" in start_value:
+                existing = _to_istanbul_iso(start_value)[11:16]
+                if any(f"{int(h):02d}:{m}" == existing for h, m in requested_times):
+                    score += 4
+
+            if score:
+                candidates.append({
+                    "score": score,
+                    "calendar_id": source["id"],
+                    "calendar_name": source.get("summary") or "Google Calendar",
+                    "event": event,
+                })
+
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+
+    if not candidates:
+        return {"status": "not_found", "matches": []}
+
+    if len(candidates) > 1 and candidates[0]["score"] == candidates[1]["score"]:
+        return {"status": "ambiguous", "matches": candidates[:3]}
+
+    return {"status": "matched", "match": candidates[0]}
+
+
+async def update_calendar_event_time(
+    db,
+    user_id: str,
+    target_date: date,
+    new_time: str,
+    message: str,
+):
+    found = await _find_calendar_event_for_action(
+        db, user_id, target_date, message
+    )
+    if found.get("status") != "matched":
+        return found
+
+    match = found["match"]
+    event = match["event"]
+
+    old_start_raw = (
+        event.get("start", {}).get("dateTime")
+        or event.get("start", {}).get("date")
+    )
+    old_end_raw = (
+        event.get("end", {}).get("dateTime")
+        or event.get("end", {}).get("date")
+    )
+
+    if not old_start_raw or "T" not in old_start_raw:
+        return {"status": "unsupported_all_day"}
+
+    old_start = datetime.fromisoformat(
+        old_start_raw.replace("Z", "+00:00")
+    ).astimezone(ISTANBUL_TZ)
+
+    if old_end_raw and "T" in old_end_raw:
+        old_end = datetime.fromisoformat(
+            old_end_raw.replace("Z", "+00:00")
+        ).astimezone(ISTANBUL_TZ)
+        duration = old_end - old_start
+    else:
+        duration = timedelta(hours=1)
+
+    hour, minute = map(int, new_time.split(":"))
+    new_start = datetime(
+        target_date.year, target_date.month, target_date.day,
+        hour, minute, tzinfo=ISTANBUL_TZ
+    )
+    new_end = new_start + duration
+
+    creds = await credentials_for(db, user_id)
+    cal = _service("calendar", "v3", creds)
+
+    patched = _http(cal.events().patch(
+        calendarId=match["calendar_id"],
+        eventId=event["id"],
+        body={
+            "start": {
+                "dateTime": new_start.isoformat(),
+                "timeZone": "Europe/Istanbul",
+            },
+            "end": {
+                "dateTime": new_end.isoformat(),
+                "timeZone": "Europe/Istanbul",
+            },
+        },
+        sendUpdates="none",
+    ))
+
+    verified = _http(cal.events().get(
+        calendarId=match["calendar_id"],
+        eventId=event["id"],
+    ))
+
+    clear_user_cache(user_id)
+
+    verified_start = (
+        verified.get("start", {}).get("dateTime")
+        or verified.get("start", {}).get("date")
+    )
+
+    return {
+        "status": "updated",
+        "title": verified.get("summary", ""),
+        "time": _to_istanbul_iso(verified_start)[11:16],
+        "calendar": match["calendar_name"],
+    }
+
+
+async def delete_calendar_event(
+    db,
+    user_id: str,
+    target_date: date,
+    message: str,
+):
+    found = await _find_calendar_event_for_action(
+        db, user_id, target_date, message
+    )
+    if found.get("status") != "matched":
+        return found
+
+    match = found["match"]
+    event = match["event"]
+
+    creds = await credentials_for(db, user_id)
+    cal = _service("calendar", "v3", creds)
+
+    title = event.get("summary", "Etkinlik")
+
+    _http(cal.events().delete(
+        calendarId=match["calendar_id"],
+        eventId=event["id"],
+        sendUpdates="none",
+    ))
+
+    clear_user_cache(user_id)
+
+    return {
+        "status": "deleted",
+        "title": title,
+        "calendar": match["calendar_name"],
+    }
 
 async def update_task_status(db, user_id: str, message: str, new_status: str):
     creds = await credentials_for(db, user_id)
