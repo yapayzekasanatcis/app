@@ -26,52 +26,57 @@ class ActionResult:
 def _calendar_title(message: str) -> str:
     folded = message.casefold()
 
-    if ("gelin" in folded and "damat" in folded) or "gelin damat" in folded:
+    if "gelin" in folded and "damat" in folded:
         return "Gelin-Damat Görüşmesi"
 
-    text = message.strip()
+    if "tuğba" in folded or "tugba" in folded:
+        if any(term in folded for term in ("sürpriz", "surpriz", "gizli", "hediye", "hazırlık", "hazirlik")):
+            return "Tuğba — Sürpriz Hazırlık"
 
-    quoted = re.search(r'["“](.+?)["”]', text)
+    quoted = re.search(r'["“](.+?)["”]', message)
     if quoted:
         return quoted.group(1).strip()
 
+    text = message.strip()
+
+    # Baştaki tarih + saat ifadesini temizle.
     text = re.sub(
-        r'\b(?:takvimime|takvime|google takvime)\s+ekle\b.*$',
+        r'^\s*\d{1,2}\s+'
+        r'(?:ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|'
+        r'ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik)'
+        r'(?:\s+\d{4})?'
+        r'(?:\s+saat)?\s+\d{1,2}(?::\d{2})?'
+        r"(?:'?[ey]e|'?[ad]a)?\s*",
         '',
         text,
         flags=re.IGNORECASE,
     )
 
+    # Komut kısmını temizle.
     text = re.sub(
-        r'\b(?:\d{1,2}\s+(?:ocak|şubat|subat|mart|nisan|mayıs|mayis|haziran|temmuz|ağustos|agustos|eylül|eylul|ekim|kasım|kasim|aralık|aralik)(?:\s+\d{4})?)\b',
+        r'\b(?:takvimime|takvime|google takvime)\s+(?:ekle|kaydet|koy)\b.*$',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r'\b(?:ekle|kaydet|oluştur|olustur|eklenmesi)\b.*$',
         '',
         text,
         flags=re.IGNORECASE,
     )
 
+    # Gizlilik talimatlarını başlıktan çıkar.
     text = re.sub(
-        r'\b(?:saat\s*)?\d{1,2}(?::\d{2})?\b',
+        r'\b(?:gizli olsun|tuğba görmesin|tugba gormesin|sürpriz olsun|surpriz olsun)\b.*$',
         '',
         text,
         flags=re.IGNORECASE,
     )
 
-    text = re.sub(
-        r'\b(?:bugün|bugun|yarın|yarin|akşam|aksam|sabah|öğlen|oglen)\b',
-        '',
-        text,
-        flags=re.IGNORECASE,
-    )
+    text = re.sub(r'\s+', ' ', text).strip(" ,.-'")
 
-    text = re.sub(
-        r'\b(?:bir tane|randevu oluşturdum|randevu olusturdum|randevu aldım|randevu aldim)\b',
-        '',
-        text,
-        flags=re.IGNORECASE,
-    )
-
-    text = re.sub(r'\s+', ' ', text).strip(' ,.-')
-    return text or "NOVA etkinliği"
+    return text or "NOVA Etkinliği"
 
 
 async def execute_action(decision, registry: dict, db, user_id: str, message: str) -> ActionResult:
@@ -116,7 +121,7 @@ async def execute_action(decision, registry: dict, db, user_id: str, message: st
                 capability,
                 True,
                 True,
-                f"Bora, ekledim. {created['title']} {decision.target_date.strftime('%d.%m.%Y')} saat {spoken_time} için {created['calendar']} takvimine kaydedildi."
+                f"Bora, {created['title']} kaydını {decision.target_date.strftime('%d.%m.%Y')} saat {spoken_time} için {created['calendar']} takvimine ekledim."
             )
 
         if decision.action == "update":
