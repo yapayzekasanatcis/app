@@ -85,6 +85,14 @@ def _upcoming_family_birthday(today: date) -> str:
 
 def _looks_personal_unknown(folded: str) -> bool:
     subjects = ("tugba", "tuba", "atakan", "tolga", "annem", "annemin", "esim", "oglum", "kardesim")
+
+    recommendation_terms = (
+        "hediye", "oner", "öner", "fikir", "surpriz", "sürpriz",
+        "ne alayim", "ne almaliyim", "ne yapalim", "ne yapalım"
+    )
+    if any(term in folded for term in recommendation_terms):
+        return False
+
     questions = (" ne", "nedir", "nasil", "kac", "hangi", "numara", "beden", "boy", "kilo", "seviyor")
     return any(subject in folded for subject in subjects) and any(word in f" {folded}" for word in questions)
 
