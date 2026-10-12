@@ -511,6 +511,8 @@ async def create_calendar_event(
     target_time: str,
     message: str = "",
     duration_minutes: int = 60,
+    description: str = "",
+    location: str = "",
 ):
     if not target_date or not target_time:
         return None
@@ -537,6 +539,12 @@ async def create_calendar_event(
             "timeZone": "Europe/Istanbul",
         },
     }
+
+    if description.strip():
+        body["description"] = description.strip()
+
+    if location.strip():
+        body["location"] = location.strip()
 
     created = _http(cal.events().insert(
         calendarId=source["id"],

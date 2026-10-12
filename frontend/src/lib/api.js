@@ -118,10 +118,11 @@ export const voiceApi = {
 
 
 export const attachmentApi = {
-  analyze: (files, instruction = "") => {
+  analyze: (files, instruction = "", conversation_id = "default") => {
     const fd = new FormData();
     files.forEach(file => fd.append("files", file));
     fd.append("instruction", instruction);
+    fd.append("conversation_id", conversation_id);
     return api.post("/attachments/analyze", fd, {
       headers: { "Content-Type": "multipart/form-data" },
     }).then(r => r.data);

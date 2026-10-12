@@ -31,7 +31,7 @@ from assistant_context import LIVE_WEB_INTENTS, build_chat_package
 from capability_registry import get_capability_registry
 from connector_router import execute_read_connector
 from conversation_context import save_conversation_context
-from intelligence_models import answer_general_knowledge, answer_live_web, analyze_attachment, analyze_attachments
+from intelligence_models import answer_general_knowledge, answer_live_web, analyze_attachment, analyze_attachments, extract_calendar_items_from_attachment
 from intent_router import route_message
 from personal_memory import required_memory_fact_prefix
 from response_composer import apply_freshness_guard, ensure_complete_response, ensure_requested_items
@@ -473,6 +473,154 @@ def _data_source_label(package: dict) -> str:
 @api.post("/chat")
 async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
     now = datetime.now(ZoneInfo("Europe/Istanbul"))
+
+    folded_message = body.message.casefold()
+    attachment_calendar_command = (
+        any(term in folded_message for term in (
+            "bunlari takvimime isle",
+            "bunları takvimime işle",
+            "bunlari takvime isle",
+            "bunları takvime işle",
+            "biletleri takvimime isle",
+            "biletleri takvimime işle",
+            "takvime isle",
+            "takvime işle",
+        ))
+        and any(term in folded_message for term in (
+            "bun", "bilet", "takvim"
+        ))
+    )
+
+    if attachment_calendar_command:
+        context = await db.conversation_contexts.find_one(
+            {
+                "user_id": user["id"],
+                "conversation_id": body.conversation_id,
+            },
+            {"_id": 0},
+        )
+
+        attachment_analysis = (context or {}).get("attachment_analysis")
+
+        if not attachment_analysis:
+            return {
+                "answer": "Bora, bu sohbette takvime işleyebileceğim güncel bir bilet veya belge analizi bulamadım.",
+                "intent": "attachment_calendar",
+                "data_source": "Attachment Context",
+                "sources": [],
+                "source": body.source,
+                "action_result": None,
+                "resolved_target_date": None,
+            }
+
+        registry = await get_capability_registry(db, user["id"])
+        calendar_write = registry.get("calendar.write", {})
+
+        if not calendar_write.get("available"):
+            return {
+                "answer": "Bora, Google Takvim yazma bağlantısı şu anda aktif değil.",
+                "intent": "attachment_calendar",
+                "data_source": "Capability Registry",
+                "sources": [],
+                "source": body.source,
+                "action_result": None,
+                "resolved_target_date": None,
+            }
+
+        try:
+            items = await extract_calendar_items_from_attachment(
+                attachment_analysis,
+                f"{user['id']}:{body.conversation_id}:attachment-calendar",
+            )
+        except Exception as exc:
+            logger.exception("Attachment calendar extraction failed")
+            items = []
+
+        if not items:
+            return {
+                "answer": "Bora, belgelerde takvime güvenle yazabileceğim tam tarih ve saat bilgisi bulamadım. Eksik bilgiyi tahmin ederek eklemiyorum.",
+                "intent": "attachment_calendar",
+                "data_source": "Attachment Analysis",
+                "sources": [],
+                "source": body.source,
+                "action_result": None,
+                "resolved_target_date": None,
+            }
+
+        created_items = []
+
+        for item in items:
+            try:
+                event_date = datetime.strptime(
+                    item["date"],
+                    "%Y-%m-%d",
+                ).date()
+
+                created = await gint.create_calendar_event(
+                    db,
+                    user["id"],
+                    item["title"],
+                    event_date,
+                    item["time"],
+                    message="seyahat bilet takvim kaydı",
+                    description=item.get("description", ""),
+                    location=item.get("location", ""),
+                )
+
+                if created:
+                    created_items.append(created)
+
+            except Exception:
+                logger.exception("Attachment calendar event creation failed")
+
+        if not created_items:
+            answer = "Bora, bilet bilgilerini çıkardım ama Google Takvim kayıtlarını doğrulayamadım; ekledim demiyorum."
+        else:
+            lines = []
+            for event in created_items:
+                start = event.get("start", "")
+                day = start[8:10] + "." + start[5:7] + "." + start[:4] if len(start) >= 10 else ""
+                hour = start[11:16] if len(start) >= 16 else ""
+                lines.append(f"{event.get('title', 'Seyahat')} — {day} {hour}".strip())
+
+            answer = (
+                "Bora, biletlerden doğruladığım seyahat kayıtlarını takvimine işledim: "
+                + "; ".join(lines)
+                + "."
+            )
+
+        await db.messages.insert_one({
+            "user_id": user["id"],
+            "conversation_id": body.conversation_id,
+            "role": "user",
+            "content": body.message,
+            "source": body.source,
+            "created_at": now_iso(),
+        })
+
+        await db.messages.insert_one({
+            "user_id": user["id"],
+            "conversation_id": body.conversation_id,
+            "role": "assistant",
+            "content": answer,
+            "source": body.source,
+            "created_at": now_iso(),
+        })
+
+        return {
+            "answer": answer,
+            "intent": "attachment_calendar",
+            "data_source": "Attachment Analysis + Google Calendar",
+            "sources": [],
+            "source": body.source,
+            "action_result": {
+                "executed": bool(created_items),
+                "verified": bool(created_items),
+                "count": len(created_items),
+            },
+            "resolved_target_date": None,
+        }
+
     decision = route_message(body.message, now)
     special_result = None
     action_result = None
@@ -793,6 +941,7 @@ MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024
 async def analyze_uploaded_attachments(
     files: List[UploadFile] = File(...),
     instruction: str = Form(""),
+    conversation_id: str = Form("default"),
     user: dict = Depends(current_user),
 ):
     if not files:
@@ -858,6 +1007,24 @@ async def analyze_uploaded_attachments(
             prepared,
             instruction,
             f"{user['id']}:attachments",
+        )
+
+        await db.conversation_contexts.update_one(
+            {
+                "user_id": user["id"],
+                "conversation_id": conversation_id,
+            },
+            {
+                "$set": {
+                    "user_id": user["id"],
+                    "conversation_id": conversation_id,
+                    "intent": "attachment_analysis",
+                    "attachment_analysis": answer,
+                    "attachment_file_count": len(prepared),
+                    "updated_at": now_iso(),
+                }
+            },
+            upsert=True,
         )
 
         return {

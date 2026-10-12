@@ -2,6 +2,7 @@
 from datetime import datetime
 from pathlib import Path
 import logging
+import json
 import os
 import re
 
@@ -386,3 +387,84 @@ Kısa ve doğal Türkiye Türkçesi kullan."""
     return await chat.send_message(
         UserMessage(text=prompt, file_contents=contents)
     )
+
+
+async def extract_calendar_items_from_attachment(
+    attachment_analysis: str,
+    session_id: str,
+) -> list[dict]:
+    """Convert a verified attachment analysis into safe calendar items."""
+    system = """Sen NOVA'nın belge-takvim dönüştürücüsün.
+
+Sana yalnızca daha önce görseller/PDF'lerden çıkarılmış bir analiz verilecek.
+SADECE bu metinde açıkça bulunan bilgileri kullan.
+
+Asla tarih, saat, firma, güzergah, PNR, terminal veya yer uydurma.
+
+Sadece takvime konulabilecek seyahat hareketlerini çıkar:
+- gidiş
+- dönüş
+
+Her kayıt için date ve time zorunlu.
+Bir kaydın tarihi veya saati yoksa o kaydı items listesine koyma.
+
+SADECE geçerli JSON döndür. Markdown veya açıklama yazma.
+
+Şema:
+{
+  "items": [
+    {
+      "title": "Gidiş — Firma — Kalkış → Varış",
+      "date": "YYYY-MM-DD",
+      "time": "HH:MM",
+      "location": "kalkış noktası veya boş",
+      "description": "Belgeden doğrulanan PNR, firma, güzergah, varış saati, koltuk ve diğer önemli bilgiler"
+    }
+  ]
+}
+
+En fazla 4 kayıt üret."""
+
+    chat = (
+        LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=session_id,
+            system_message=system,
+        )
+        .with_model("gemini", "gemini-2.5-flash")
+        .with_params(temperature=0.0, max_tokens=1000)
+    )
+
+    raw = await chat.send_message(
+        UserMessage(text=attachment_analysis)
+    )
+
+    text = str(raw).strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text)
+
+    data = json.loads(text)
+    items = data.get("items", [])
+
+    safe = []
+    for item in items[:4]:
+        if not isinstance(item, dict):
+            continue
+
+        date_value = str(item.get("date", "")).strip()
+        time_value = str(item.get("time", "")).strip()
+
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_value):
+            continue
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", time_value):
+            continue
+
+        safe.append({
+            "title": str(item.get("title") or "Seyahat").strip(),
+            "date": date_value,
+            "time": time_value,
+            "location": str(item.get("location") or "").strip(),
+            "description": str(item.get("description") or "").strip(),
+        })
+
+    return safe
