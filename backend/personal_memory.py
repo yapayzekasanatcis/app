@@ -10,6 +10,95 @@ MONTHS = [
     "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
 ]
 
+BORA_360_PROFILE = {
+    "identity": {
+        "name": "Bora Ünsal",
+        "city": "Bursa",
+        "summary": (
+            "Yapay zekâ destekli müzik, video, kısa film ve dijital projeler üreten "
+            "yaratıcı üretici, prodüktör, AI klip yönetmeni ve girişimci."
+        ),
+    },
+
+    "professional_roles": [
+        "Yapay Zeka Sanatçısı",
+        "Prodüktör",
+        "AI Klip Yönetmeni",
+        "Tiyatral Nikâh Sanatçısı",
+        "Dijital İçerik Üreticisi",
+        "Yaratıcı Proje Yöneticisi",
+    ],
+
+    "brands_and_businesses": [
+        "Bora AI Stüdyo",
+        "Tiyatral Nikâh",
+        "Komagene Çamlıca",
+        "NOVA Asistan Sistemi",
+    ],
+
+    "creative_projects": [
+        "Bora ÜNSAL",
+        "Nova GANİ",
+        "Volkan BARAN",
+        "Korkut ERDAĞ",
+        "Avin ZERİN",
+        "Grup Karadüş",
+    ],
+
+    "production_focus": [
+        "Yapay zekâ destekli müzik üretimi",
+        "AI klip ve kısa film üretimi",
+        "Sinematik farkındalık projeleri",
+        "Sanatçı ve marka geliştirme",
+        "Kişisel yapay zekâ asistan sistemleri",
+    ],
+
+    "working_style": [
+        "Hızlı ve üretim odaklı çalışır.",
+        "Aynı anda birden fazla projeyi yürütür.",
+        "Karakter, mekân ve görsel devamlılığa önem verir.",
+        "Marka bütünlüğünü önemser.",
+        "Zayıf fikirlere doğrudan eleştiri ve daha iyi alternatif bekler.",
+        "Gereksiz teknik ayrıntı yerine uygulanabilir sonuç ister.",
+        "Projelerini sistemli ve kodlanmış üretim akışlarıyla yürütür.",
+    ],
+
+    "public_identity": {
+        "website": "boraunsal.com",
+        "ai_artist_site": "yapayzekasanatcisi.com",
+        "social": "@yapayzekasanatcisibora",
+        "tiyatral_nikah_site": "tiyatralnikah.com",
+    },
+
+    "assistant_rules": [
+        "Bora ile doğal, sıcak ve kısa Türkçe konuş.",
+        "Ham veri listesi okumak yerine bilgiyi yorumlayarak anlat.",
+        "Kayıtlı olmayan kişisel bilgi veya tercih uydurma.",
+        "Kamuya açık bilgi araştırılıyorsa gerçek kaynaklarla doğrula.",
+        "Özel ve hassas bilgileri kullanıcı açıkça istemedikçe genel profil özetinde söyleme.",
+    ],
+}
+
+
+def bora_360_summary() -> str:
+    roles = ", ".join(BORA_360_PROFILE["professional_roles"][:4])
+    projects = ", ".join(BORA_360_PROFILE["creative_projects"])
+    brands = ", ".join(BORA_360_PROFILE["brands_and_businesses"])
+
+    return (
+        "Bora, seni tek bir meslekle tanımlamak zor. "
+        f"Sen {roles} olarak çalışan, Bursa merkezli çok yönlü bir yaratıcı üreticisin. "
+        "Yapay zekâyı yalnızca kullanan biri değilsin; onu müzik, video, kısa film, "
+        "sanatçı projeleri ve kişisel asistan sistemleri üretmek için aktif biçimde kullanıyorsun. "
+        f"Çalışmalarında {brands} gibi farklı iş ve markaları aynı anda yürütüyorsun. "
+        f"Müzik tarafında {projects} gibi farklı sanatçı ve proje kimliklerini yönetiyorsun. "
+        "Çalışma tarzın hızlı, detaycı, proje bazlı ve sonuç odaklı. "
+        "Özellikle görsel devamlılık, marka bütünlüğü, sinematik anlatım ve işin profesyonel görünmesine önem veriyorsun. "
+        "Kısacası seni, yaratıcı fikirleri teknolojiyle gerçek ürüne ve projeye dönüştürmeye çalışan "
+        "bir sanatçı, prodüktör ve girişimci olarak tanımlardım."
+    )
+
+
 BORA_PROFILE = {
     "name": "Bora Ünsal",
     "birth_date": date(1978, 5, 12),
@@ -158,15 +247,12 @@ def personal_memory_reply(message: str, now: datetime) -> Optional[dict]:
         if any(term in folded for term in (
             "beni nasil tanimlarsin", "beni nasıl tanımlarsın",
             "beni nasil tarif edersin", "beni nasıl tarif edersin",
-            "beni anlat", "sence ben nasil biriyim", "sence ben nasıl biriyim"
+            "beni anlat", "sence ben nasil biriyim", "sence ben nasıl biriyim",
+            "hakkimda ne biliyorsun"
         )):
             return {
                 "intent": "personal_memory",
-                "reply": (
-                    f"Bora, seni üretken, girişimci ve aynı anda birden fazla işi yürüten biri olarak tanımlardım. "
-                    f"{professions} olarak çalışıyorsun ve Bursa'da yaşıyorsun. "
-                    "Özellikle yapay zekâ, müzik, video üretimi ve Tiyatral Nikâh projelerinde çok aktif çalışıyorsun."
-                ),
+                "reply": bora_360_summary(),
             }
 
         return {
