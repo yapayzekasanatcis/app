@@ -86,7 +86,7 @@ export const ChatPanel = ({ onState, extraMessage }) => {
         <div className="font-serif-display text-xl text-[color:var(--nova-text)] mt-1">Nasıl yardımcı olabilirim Bora?</div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto px-4 py-5 space-y-4 min-h-[280px] max-h-[55vh]">
+      <div ref={scrollRef} className="flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto px-4 py-4 space-y-4 min-h-0">
         {msgs.length === 0 && (
           <div className="text-[color:var(--nova-text-3)] text-sm font-mono-nova">
             Örnek: "Nova bugün programımız ne?" ya da "Nova bunu not al: Cuma 16:00 merkez siparişi"

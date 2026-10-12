@@ -54,15 +54,15 @@ export const Layout = () => {
       </div>
 
       {/* Desktop floating NOVA panel */}
-      <aside className="hidden lg:flex fixed right-6 top-6 bottom-6 w-[380px] flex-col gap-4 z-20">
-        <div className="nova-glass rounded-2xl p-6 flex flex-col items-center gap-5">
-          <NovaPortrait state={novaState} width={168} testId="nova-portrait-desktop" priority />
+      <aside className="hidden lg:flex fixed right-4 top-4 bottom-4 w-[380px] flex-col gap-3 z-20">
+        <div className="nova-glass rounded-2xl p-4 flex shrink-0 flex-col items-center gap-3">
+          <NovaPortrait state={novaState} width={128} testId="nova-portrait-desktop" priority />
           <PushToTalk onState={setNovaState} onReply={setLastReply} testId="push-to-talk-button-desktop" />
           <div className="text-center text-xs text-[color:var(--nova-text-3)] font-mono-nova">
             Mikrofona dokun ve konuş
           </div>
         </div>
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-hidden">
           <ChatPanel onState={setNovaState} extraMessage={lastReply} />
         </div>
       </aside>
