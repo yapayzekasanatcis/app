@@ -7,7 +7,7 @@ export const ChatPanel = ({ onState, extraMessage }) => {
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [attachment, setAttachment] = useState(null);
+  const [attachments, setAttachments] = useState([]);
   const scrollRef = useRef(null);
   const audioRef = useRef(null);
   const fileRef = useRef(null);
@@ -31,21 +31,25 @@ export const ChatPanel = ({ onState, extraMessage }) => {
 
   const send = async () => {
     const text = input.trim();
-    if ((!text && !attachment) || busy) return;
+    if ((!text && attachments.length === 0) || busy) return;
 
-    const selectedFile = attachment;
-    const displayText = selectedFile
-      ? `${text || "Bu dosyayı incele."}\n📎 ${selectedFile.name}`
+    const selectedFiles = attachments;
+
+    const displayText = selectedFiles.length
+      ? `${text || "Bu dosyaları incele."}\n${selectedFiles.map(f => `📎 ${f.name}`).join("\n")}`
       : text;
 
     setInput("");
-    setAttachment(null);
+    setAttachments([]);
     setMsgs(m => [...m, { role: "user", content: displayText, created_at: new Date().toISOString() }]);
     setBusy(true);
     onState?.("thinking");
     try {
-      const result = selectedFile
-        ? await attachmentApi.analyze(selectedFile, text || "Bu dosyayı incele ve önemli bilgileri çıkar.")
+      const result = selectedFiles.length
+        ? await attachmentApi.analyze(
+            selectedFiles,
+            text || "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
+          )
         : await chatApi.send(text);
 
       const { answer, sources = [] } = result;
@@ -123,18 +127,31 @@ export const ChatPanel = ({ onState, extraMessage }) => {
       </div>
 
       <div className="shrink-0 min-w-0 p-3 border-t border-[color:var(--nova-border)]">
-        {attachment && (
-          <div className="mb-2 flex items-center gap-2 rounded-xl border border-[color:var(--nova-border)] bg-[color:var(--nova-bg-3)] px-3 py-2 text-xs text-[color:var(--nova-text-2)]">
-            <Paperclip className="h-3.5 w-3.5 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
-            <button
-              type="button"
-              onClick={() => setAttachment(null)}
-              className="rounded-md p-1 hover:bg-white/5"
-              aria-label="Dosyayı kaldır"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+        {attachments.length > 0 && (
+          <div className="mb-2 space-y-1">
+            {attachments.map((file, index) => (
+              <div
+                key={`${file.name}-${index}`}
+                className="flex items-center gap-2 rounded-xl border border-[color:var(--nova-border)] bg-[color:var(--nova-bg-3)] px-3 py-2 text-xs text-[color:var(--nova-text-2)]"
+              >
+                <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                <span className="min-w-0 flex-1 truncate">
+                  {file.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAttachments(current =>
+                      current.filter((_, i) => i !== index)
+                    )
+                  }
+                  className="rounded-md p-1 hover:bg-white/5"
+                  aria-label="Dosyayı kaldır"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
           </div>
         )}
 
@@ -142,17 +159,43 @@ export const ChatPanel = ({ onState, extraMessage }) => {
           <input
             ref={fileRef}
             type="file"
+            multiple
             accept="image/jpeg,image/png,image/webp,application/pdf"
             className="hidden"
             onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (!file) return;
-              if (file.size > 12 * 1024 * 1024) {
-                toast.error("Dosya çok büyük", { description: "En fazla 12 MB yükleyebilirsin." });
+              const selected = Array.from(e.target.files || []);
+
+              if (!selected.length) return;
+
+              const oversized = selected.find(
+                file => file.size > 12 * 1024 * 1024
+              );
+
+              if (oversized) {
+                toast.error(
+                  "Dosya çok büyük",
+                  { description: "Her dosya en fazla 12 MB olabilir." }
+                );
                 e.target.value = "";
                 return;
               }
-              setAttachment(file);
+
+              setAttachments(current => {
+                const combined = [...current, ...selected];
+
+                if (combined.length > 5) {
+                  toast.error(
+                    "En fazla 5 dosya",
+                    {
+                      description:
+                        "Aynı mesajda en fazla 5 dosya yükleyebilirsin."
+                    }
+                  );
+                }
+
+                return combined.slice(0, 5);
+              });
+
               e.target.value = "";
             }}
           />
@@ -178,7 +221,7 @@ export const ChatPanel = ({ onState, extraMessage }) => {
         />
         <button
           onClick={send}
-          disabled={busy || (!input.trim() && !attachment)}
+          disabled={busy || (!input.trim() && attachments.length === 0)}
           data-testid="chat-send-button"
           className="rounded-xl bg-[color:var(--nova-amber)] text-black px-4 flex items-center justify-center hover:bg-[color:var(--nova-amber-hover)] transition-colors disabled:opacity-50"
         >

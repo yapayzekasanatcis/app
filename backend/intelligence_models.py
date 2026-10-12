@@ -320,3 +320,68 @@ diye belirt. Kısa, temiz ve doğal Türkiye Türkçesi kullan."""
     return await chat.send_message(
         UserMessage(text=prompt, file_contents=[content])
     )
+
+
+async def analyze_attachments(
+    files: list[tuple[str, str, str]],
+    instruction: str,
+    session_id: str,
+) -> str:
+    """Analyze up to five images/PDFs together as one document set."""
+    system = """Sen NOVA'sın. Bora'nın aynı mesajda yüklediği dosyaları tek bir belge seti olarak incele.
+
+Dosyalarda açıkça görünmeyen hiçbir bilgiyi uydurma.
+Aynı seyahate ait birden fazla bilet/görsel varsa bilgileri birleştir.
+Çelişen bilgi varsa bunu açıkça belirt.
+
+Bilet veya rezervasyon setinde mümkünse şunları çıkar:
+- yolcu
+- firma
+- gidiş tarihi
+- gidiş kalkış saati
+- kalkış noktası
+- varış noktası
+- varış saati
+- dönüş tarihi
+- dönüş saati
+- PNR / rezervasyon kodu
+- koltuk
+- terminal / havalimanı
+- önemli notlar
+
+Bu aşamada takvime yazma yapma.
+Kısa ve doğal Türkiye Türkçesi kullan."""
+
+    chat = (
+        LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=session_id,
+            system_message=system,
+        )
+        .with_model("gemini", "gemini-2.5-flash")
+        .with_params(temperature=0.0, max_tokens=1500)
+    )
+
+    import base64
+
+    contents = []
+    for file_path, mime_type, filename in files:
+        if mime_type.startswith("image/"):
+            raw = Path(file_path).read_bytes()
+            contents.append(
+                ImageContent(base64.b64encode(raw).decode("ascii"))
+            )
+        elif mime_type == "application/pdf":
+            contents.append(
+                FileContentWithMimeType("application/pdf", file_path)
+            )
+        else:
+            raise ValueError(f"Desteklenmeyen dosya türü: {filename}")
+
+    prompt = instruction.strip() or (
+        "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
+    )
+
+    return await chat.send_message(
+        UserMessage(text=prompt, file_contents=contents)
+    )

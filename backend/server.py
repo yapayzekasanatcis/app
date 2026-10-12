@@ -31,7 +31,7 @@ from assistant_context import LIVE_WEB_INTENTS, build_chat_package
 from capability_registry import get_capability_registry
 from connector_router import execute_read_connector
 from conversation_context import save_conversation_context
-from intelligence_models import answer_general_knowledge, answer_live_web, analyze_attachment
+from intelligence_models import answer_general_knowledge, answer_live_web, analyze_attachment, analyze_attachments
 from intent_router import route_message
 from personal_memory import required_memory_fact_prefix
 from response_composer import apply_freshness_guard, ensure_complete_response, ensure_requested_items
@@ -790,52 +790,96 @@ MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024
 
 
 @api.post("/attachments/analyze")
-async def analyze_uploaded_attachment(
-    file: UploadFile = File(...),
+async def analyze_uploaded_attachments(
+    files: List[UploadFile] = File(...),
     instruction: str = Form(""),
     user: dict = Depends(current_user),
 ):
-    mime_type = (file.content_type or "").lower()
-    if mime_type not in ALLOWED_ATTACHMENT_TYPES:
+    if not files:
+        raise HTTPException(400, "Dosya seçilmedi.")
+
+    if len(files) > 5:
         raise HTTPException(
             400,
-            "Şimdilik yalnız JPG, PNG, WebP ve PDF yükleyebilirsin."
+            "Aynı mesajda en fazla 5 dosya yükleyebilirsin."
         )
 
-    raw = await file.read(MAX_ATTACHMENT_BYTES + 1)
-    if not raw:
-        raise HTTPException(400, "Dosya boş.")
-    if len(raw) > MAX_ATTACHMENT_BYTES:
-        raise HTTPException(413, "Dosya en fazla 12 MB olabilir.")
+    temp_paths = []
+    prepared = []
+    total_size = 0
 
-    suffix = Path(file.filename or "dosya").suffix
-    temp_path = None
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(raw)
-            temp_path = tmp.name
+        for file in files:
+            mime_type = (file.content_type or "").lower()
 
-        answer = await analyze_attachment(
-            temp_path,
-            mime_type,
-            file.filename or "dosya",
+            if mime_type not in ALLOWED_ATTACHMENT_TYPES:
+                raise HTTPException(
+                    400,
+                    "Yalnız JPG, PNG, WebP ve PDF yükleyebilirsin."
+                )
+
+            raw = await file.read(MAX_ATTACHMENT_BYTES + 1)
+
+            if not raw:
+                raise HTTPException(400, "Dosyalardan biri boş.")
+
+            if len(raw) > MAX_ATTACHMENT_BYTES:
+                raise HTTPException(
+                    413,
+                    "Her dosya en fazla 12 MB olabilir."
+                )
+
+            total_size += len(raw)
+
+            if total_size > 30 * 1024 * 1024:
+                raise HTTPException(
+                    413,
+                    "Toplam dosya boyutu en fazla 30 MB olabilir."
+                )
+
+            suffix = Path(file.filename or "dosya").suffix
+
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=suffix
+            ) as tmp:
+                tmp.write(raw)
+                temp_path = tmp.name
+
+            temp_paths.append(temp_path)
+
+            prepared.append((
+                temp_path,
+                mime_type,
+                file.filename or "dosya",
+            ))
+
+        answer = await analyze_attachments(
+            prepared,
             instruction,
-            f"{user['id']}:attachment",
+            f"{user['id']}:attachments",
         )
 
         return {
             "answer": answer,
-            "filename": file.filename or "dosya",
-            "mime_type": mime_type,
+            "file_count": len(prepared),
         }
+
     except HTTPException:
         raise
     except Exception as exc:
-        logger.error("Attachment analysis failed type=%s", type(exc).__name__)
-        raise HTTPException(500, "Dosya şu anda analiz edilemedi.")
+        logger.error(
+            "Attachment analysis failed type=%s",
+            type(exc).__name__
+        )
+        raise HTTPException(
+            500,
+            "Dosyalar şu anda analiz edilemedi."
+        )
     finally:
-        if temp_path:
+        for temp_path in temp_paths:
             Path(temp_path).unlink(missing_ok=True)
+
 
 # ---------- TTS ----------
 @api.post("/voice/tts")

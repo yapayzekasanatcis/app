@@ -118,9 +118,9 @@ export const voiceApi = {
 
 
 export const attachmentApi = {
-  analyze: (file, instruction = "") => {
+  analyze: (files, instruction = "") => {
     const fd = new FormData();
-    fd.append("file", file);
+    files.forEach(file => fd.append("files", file));
     fd.append("instruction", instruction);
     return api.post("/attachments/analyze", fd, {
       headers: { "Content-Type": "multipart/form-data" },
