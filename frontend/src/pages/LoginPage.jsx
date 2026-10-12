@@ -66,9 +66,13 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <div className="text-center">
+        <div className="text-center flex flex-col items-center">
+          <img
+            src="/nova-logo-main.png"
+            alt="NOVA Asistan Sistemi — Bora AI Stüdyo"
+            className="w-[240px] sm:w-[280px] h-auto object-contain mb-3"
+          />
           <div className="font-mono-nova text-xs uppercase tracking-[0.4em] text-[color:var(--nova-text-3)]">Hoş geldiniz</div>
-          <h1 className="font-serif-display text-4xl sm:text-5xl mt-3 text-[color:var(--nova-text)]">NOVA ASİSTAN</h1>
           <p className="text-sm text-[color:var(--nova-text-2)] mt-3 max-w-sm">
             Bora'nın kişisel özel sekreteri. Takvim, iş, seyahat ve günlük yaşam tek merkezden koordine edilir.
           </p>

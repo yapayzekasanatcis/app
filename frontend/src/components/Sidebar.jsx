@@ -37,19 +37,12 @@ export const Sidebar = () => {
   const content = (
     <>
       <div className="px-5 pt-6 pb-5 border-b border-[color:var(--nova-border)]">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-xl bg-[color:var(--nova-amber)] grid place-items-center text-black font-serif-display text-xl font-semibold">N</div>
-          <div className="min-w-0">
-            <div className="font-serif-display text-xl text-[color:var(--nova-text)] leading-tight">
-              NOVA
-            </div>
-            <div className="font-mono-nova text-[10px] uppercase tracking-[0.3em] text-[color:var(--nova-text-3)]">
-              ASİSTAN SİSTEMİ
-            </div>
-            <div className="mt-1 font-mono-nova text-[8px] uppercase tracking-[0.22em] text-[color:var(--nova-amber)]/70">
-              BORA AI STÜDYO
-            </div>
-          </div>
+        <div className="flex items-center">
+          <img
+            src="/nova-logo-wide.png"
+            alt="NOVA Asistan Sistemi — Bora AI Stüdyo"
+            className="w-full max-w-[190px] h-auto object-contain object-left"
+          />
         </div>
       </div>
 
