@@ -81,6 +81,28 @@ NOVA_TTS_INSTRUCTIONS = (
 )
 
 
+def polish_personal_memory_text(value: str) -> str:
+    text = value.strip()
+
+    replacements = {
+        "Sen Bora Ünsal'ın;": "Sen Bora Ünsal'sın;",
+        "Sen Bora Ünsal’ın;": "Sen Bora Ünsal'sın;",
+        "kıdemli üretken": "üretken",
+        "olarak kayıtlıydım": "olarak tanımlardım",
+        "kayıtlıydım": "tanımlardım",
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
+    text = re.sub(r"\s+", " ", text).strip()
+
+    if text:
+        text = text[0].upper() + text[1:]
+
+    return text
+
+
 def prepare_tts_text(value: str) -> str:
     """Turn visual assistant text into natural Turkish speech."""
     text = re.split(r"\b(?:Kaynaklar|Sources)\s*:", value.strip(), maxsplit=1, flags=re.IGNORECASE)[0]
@@ -515,7 +537,7 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
         memory = personal_memory_reply(body.message, now)
 
         if memory and memory.get("reply"):
-            answer = memory["reply"]
+            answer = polish_personal_memory_text(memory["reply"])
 
             await db.messages.insert_one({
                 "user_id": user["id"],
