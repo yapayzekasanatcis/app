@@ -869,10 +869,9 @@ async def analyze_uploaded_attachments(
         raise
     except Exception as exc:
         logger.exception("Attachment analysis failed")
-        detail = f"{type(exc).__name__}: {str(exc)[:350]}"
         raise HTTPException(
             500,
-            "ATTACH_DEBUG — " + detail
+            "Dosyalar şu anda analiz edilemedi."
         )
     finally:
         for temp_path in temp_paths:
