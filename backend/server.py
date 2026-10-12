@@ -33,7 +33,7 @@ from connector_router import execute_read_connector
 from conversation_context import save_conversation_context
 from intelligence_models import answer_general_knowledge, answer_live_web, analyze_attachment, analyze_attachments, extract_calendar_items_from_attachment
 from intent_router import route_message
-from personal_memory import required_memory_fact_prefix
+from personal_memory import required_memory_fact_prefix, personal_memory_reply
 from response_composer import apply_freshness_guard, ensure_complete_response, ensure_requested_items
 from workspace_data import build_workspace_snapshot
 from security import BrowserSecurityMiddleware, configured_origins, csrf_token_for_request
@@ -497,6 +497,50 @@ async def chat(body: ChatIn, user: Annotated[dict, Depends(current_user)]):
     now = datetime.now(ZoneInfo("Europe/Istanbul"))
 
     folded_message = body.message.casefold()
+
+    self_description_terms = (
+        "beni nasıl tanımlarsın",
+        "beni nasil tanimlarsin",
+        "beni nasıl tarif edersin",
+        "beni nasil tarif edersin",
+        "beni anlat",
+        "sence ben nasıl biriyim",
+        "sence ben nasil biriyim",
+    )
+
+    if any(term in folded_message for term in self_description_terms):
+        memory = personal_memory_reply(body.message, now)
+
+        if memory and memory.get("reply"):
+            answer = memory["reply"]
+
+            await db.messages.insert_one({
+                "user_id": user["id"],
+                "conversation_id": body.conversation_id,
+                "role": "user",
+                "content": body.message,
+                "source": body.source,
+                "created_at": now_iso(),
+            })
+
+            await db.messages.insert_one({
+                "user_id": user["id"],
+                "conversation_id": body.conversation_id,
+                "role": "assistant",
+                "content": answer,
+                "source": body.source,
+                "created_at": now_iso(),
+            })
+
+            return {
+                "answer": answer,
+                "intent": "personal_memory",
+                "data_source": "Personal Memory",
+                "sources": [],
+                "source": body.source,
+                "action_result": None,
+                "resolved_target_date": None,
+            }
     attachment_calendar_command = (
         any(term in folded_message for term in (
             "bunlari takvimime isle",
