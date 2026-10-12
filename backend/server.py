@@ -67,14 +67,17 @@ openai_client = AsyncOpenAI(
 )
 NOVA_TTS_PRIMARY_VOICE = "marin"
 NOVA_TTS_FALLBACK_VOICE = "nova"
-NOVA_TTS_SPEED = 1.09
-NOVA_TTS_STYLE = "female-executive-assistant-natural-tr"
+NOVA_TTS_SPEED = 1.06
+NOVA_TTS_STYLE = "young-warm-bright-natural-female-tr"
 NOVA_TTS_INSTRUCTIONS = (
-    "Doğal İstanbul Türkçesiyle konuş. Sıcak, zeki ve profesyonel bir kadın yönetici asistanı gibi duyul. "
-    "20’lerinin sonu ile 30’larının başında, orta perdeli bir ses kullan. Sakin ama akıcı konuş. "
-    "Haber spikeri gibi ağır, çocuksu, abartılı neşeli veya robotik olma. "
-    "Kelimeleri birbirinden koparma; cümle geçişlerini insan konuşması gibi bağla. "
-    "Cümle aralarında yalnızca kısa ve doğal duraklamalar kullan."
+    "Doğal İstanbul Türkçesiyle konuş. Genç yetişkin bir kadın özel asistan sesi kullan. "
+    "Ses yaklaşık 20–25 yaş hissi versin; parlak, temiz, canlı ve sıcak olsun. "
+    "Hafif gülümseyen bir ifade duyulsun ama yapay neşeli veya çocuk sesi gibi olmasın. "
+    "Ses perdesi orta-yüksek, yumuşak ve modern olsun. "
+    "Bora ile uzun zamandır çalışan doğal bir kişisel asistan gibi konuş; metin okur gibi değil, karşılıklı sohbet eder gibi tonla. "
+    "Cümle başlarında doğal enerji kullan, önemli bilgileri hafif vurgula. "
+    "Haber spikeri, çağrı merkezi çalışanı, resmi sunucu veya robot gibi duyulma. "
+    "Kelimeleri kesik kesik söyleme. Cümleleri birbirine doğal bağla ve kısa, insani duraklamalar kullan."
 )
 
 
