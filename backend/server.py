@@ -65,13 +65,13 @@ openai_client = AsyncOpenAI(
     api_key=EMERGENT_LLM_KEY,
     base_url=os.environ["OPENAI_BASE_URL"]
 )
-NOVA_TTS_PRIMARY_VOICE = "marin"
-NOVA_TTS_FALLBACK_VOICE = "nova"
-NOVA_TTS_SPEED = 1.06
+NOVA_TTS_PRIMARY_VOICE = "shimmer"
+NOVA_TTS_FALLBACK_VOICE = "coral"
+NOVA_TTS_SPEED = 1.04
 NOVA_TTS_STYLE = "young-warm-bright-natural-female-tr"
 NOVA_TTS_INSTRUCTIONS = (
     "Doğal İstanbul Türkçesiyle konuş. Genç yetişkin bir kadın özel asistan sesi kullan. "
-    "Ses yaklaşık 20–25 yaş hissi versin; parlak, temiz, canlı ve sıcak olsun. "
+    "Ses yaklaşık 18–24 yaş hissi versin; parlak, temiz, hafif ince, canlı ve sıcak olsun. "
     "Hafif gülümseyen bir ifade duyulsun ama yapay neşeli veya çocuk sesi gibi olmasın. "
     "Ses perdesi orta-yüksek, yumuşak ve modern olsun. "
     "Bora ile uzun zamandır çalışan doğal bir kişisel asistan gibi konuş; metin okur gibi değil, karşılıklı sohbet eder gibi tonla. "
