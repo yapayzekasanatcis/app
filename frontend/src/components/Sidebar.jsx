@@ -41,7 +41,7 @@ export const Sidebar = () => {
           <img
             src="/nova-logo-wide.png"
             alt="NOVA Asistan Sistemi — Bora AI Stüdyo"
-            className="w-full max-w-[190px] h-auto object-contain object-left"
+            className="w-full max-w-[150px] h-auto object-contain object-left"
           />
         </div>
       </div>

@@ -52,7 +52,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 py-10 nova-grain">
-      <div className="w-full max-w-md flex flex-col items-center gap-7 md:gap-8">
+      <div className="w-full max-w-md flex flex-col items-center gap-5 md:gap-6">
         <div className="flex flex-col items-center gap-3" data-testid="login-nova-identity">
           <NovaPortrait
             state="idle"
@@ -70,7 +70,7 @@ export default function LoginPage() {
           <img
             src="/nova-logo-main.png"
             alt="NOVA Asistan Sistemi — Bora AI Stüdyo"
-            className="w-[240px] sm:w-[280px] h-auto object-contain mb-3"
+            className="w-[190px] sm:w-[220px] h-auto object-contain mb-1"
           />
           <div className="font-mono-nova text-xs uppercase tracking-[0.4em] text-[color:var(--nova-text-3)]">Hoş geldiniz</div>
           <p className="text-sm text-[color:var(--nova-text-2)] mt-3 max-w-sm">
