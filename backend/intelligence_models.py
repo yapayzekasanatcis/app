@@ -1,6 +1,7 @@
 """Cost-aware general knowledge and grounded live web research services."""
 from datetime import datetime
 from pathlib import Path
+from PIL import Image
 import logging
 import json
 import os
@@ -333,18 +334,79 @@ async def analyze_attachments(
     import base64
 
     contents = []
-    for file_path, mime_type, filename in files:
-        if mime_type.startswith("image/"):
-            raw = Path(file_path).read_bytes()
-            contents.append(
-                ImageContent(base64.b64encode(raw).decode("ascii"))
+
+    image_files = [
+        (file_path, mime_type, filename)
+        for file_path, mime_type, filename in files
+        if mime_type.startswith("image/")
+    ]
+
+    pdf_files = [
+        (file_path, mime_type, filename)
+        for file_path, mime_type, filename in files
+        if mime_type == "application/pdf"
+    ]
+
+    # Birden fazla ekran görüntüsünü tek uzun belge haline getir.
+    if image_files:
+        rendered = []
+        target_width = 1400
+
+        for file_path, mime_type, filename in image_files:
+            img = Image.open(file_path).convert("RGB")
+
+            if img.width > target_width:
+                ratio = target_width / img.width
+                img = img.resize(
+                    (target_width, int(img.height * ratio))
+                )
+
+            rendered.append(img)
+
+        canvas_width = max(img.width for img in rendered)
+        padding = 24
+        canvas_height = (
+            sum(img.height for img in rendered)
+            + padding * (len(rendered) - 1)
+        )
+
+        sheet = Image.new(
+            "RGB",
+            (canvas_width, canvas_height),
+            "white"
+        )
+
+        y = 0
+        for img in rendered:
+            x = (canvas_width - img.width) // 2
+            sheet.paste(img, (x, y))
+            y += img.height + padding
+
+        import io
+        buffer = io.BytesIO()
+        sheet.save(
+            buffer,
+            format="JPEG",
+            quality=90,
+            optimize=True
+        )
+
+        contents.append(
+            ImageContent(
+                base64.b64encode(buffer.getvalue()).decode("ascii")
             )
-        elif mime_type == "application/pdf":
-            contents.append(
-                FileContentWithMimeType("application/pdf", file_path)
+        )
+
+    for file_path, mime_type, filename in pdf_files:
+        contents.append(
+            FileContentWithMimeType(
+                "application/pdf",
+                file_path
             )
-        else:
-            raise ValueError(f"Desteklenmeyen dosya türü: {filename}")
+        )
+
+    if not contents:
+        raise ValueError("Analiz edilecek desteklenen dosya bulunamadı")
 
     prompt = instruction.strip() or "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
     folded = prompt.casefold()
