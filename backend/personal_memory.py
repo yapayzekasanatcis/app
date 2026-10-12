@@ -148,10 +148,31 @@ def personal_memory_reply(message: str, now: datetime) -> Optional[dict]:
 
     if any(term in folded for term in (
         "ben kimim", "meslegim", "mesleklerim", "ne is yapiyorum",
-        "hakkimda ne biliyorsun"
+        "hakkimda ne biliyorsun",
+        "beni nasil tanimlarsin", "beni nasıl tanımlarsın",
+        "beni nasil tarif edersin", "beni nasıl tarif edersin",
+        "beni anlat", "sence ben nasil biriyim", "sence ben nasıl biriyim"
     )):
         professions = ", ".join(BORA_PROFILE["professions"])
-        return {"intent": "personal_memory", "reply": f"Sen Bora Ünsal'sın; {professions} olarak çalışıyorsun ve Bursa'da yaşıyorsun."}
+
+        if any(term in folded for term in (
+            "beni nasil tanimlarsin", "beni nasıl tanımlarsın",
+            "beni nasil tarif edersin", "beni nasıl tarif edersin",
+            "beni anlat", "sence ben nasil biriyim", "sence ben nasıl biriyim"
+        )):
+            return {
+                "intent": "personal_memory",
+                "reply": (
+                    f"Bora, seni üretken, girişimci ve aynı anda birden fazla işi yürüten biri olarak tanımlardım. "
+                    f"{professions} olarak çalışıyorsun ve Bursa'da yaşıyorsun. "
+                    "Özellikle yapay zekâ, müzik, video üretimi ve Tiyatral Nikâh projelerinde çok aktif çalışıyorsun."
+                ),
+            }
+
+        return {
+            "intent": "personal_memory",
+            "reply": f"Sen Bora Ünsal'sın; {professions} olarak çalışıyorsun ve Bursa'da yaşıyorsun."
+        }
 
     for key, (month, day, label) in SPECIAL_DAYS.items():
         if key in folded or (key == "kadinlar" and "8 mart" in folded):
