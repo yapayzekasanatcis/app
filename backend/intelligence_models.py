@@ -492,34 +492,101 @@ Kurallar:
         if not merged[1].get("direction"):
             merged[1]["direction"] = "Dönüş"
 
-    lines = []
+    def trip_sentence(item, direction):
+        date_value = item.get("date", "")
+        time_value = item.get("departure_time", "")
+        company = item.get("company", "")
+        departure = item.get("departure", "")
+        arrival = item.get("arrival", "")
+        arrival_time = item.get("arrival_time", "")
+        seat = item.get("seat", "")
+        pnr = item.get("pnr", "")
+        terminal = item.get("terminal", "")
+        notes = item.get("notes", "")
 
-    field_map = (
-        ("Tarih", "date"),
-        ("Kalkış saati", "departure_time"),
-        ("Firma", "company"),
-        ("Kalkış", "departure"),
-        ("Varış", "arrival"),
-        ("Varış saati", "arrival_time"),
-        ("PNR / Rezervasyon", "pnr"),
-        ("Koltuk", "seat"),
-        ("Terminal / Peron", "terminal"),
-        ("Yolcu", "passenger"),
-        ("Not", "notes"),
+        parts = []
+
+        if direction == "Gidiş":
+            parts.append("Gidişin")
+        elif direction == "Dönüş":
+            parts.append("Dönüşün")
+        else:
+            parts.append("Seyahatin")
+
+        if date_value:
+            parts.append(date_value)
+
+        if time_value:
+            parts.append(f"saat {time_value}'de")
+
+        if departure:
+            parts.append(f"{departure}'dan")
+
+        if company:
+            parts.append(f"{company} ile")
+
+        if arrival:
+            parts.append(f"{arrival}'a")
+
+        sentence = " ".join(parts).strip()
+
+        if arrival:
+            sentence += " gidiyorsun"
+
+        sentence += "."
+
+        extras = []
+
+        if arrival_time:
+            extras.append(f"Varış saatin {arrival_time}")
+
+        if seat:
+            extras.append(f"koltuğun {seat} numara")
+
+        if terminal:
+            extras.append(f"terminal/peron bilgin {terminal}")
+
+        if extras:
+            sentence += " " + ", ".join(extras) + "."
+
+        if pnr:
+            sentence += f" PNR/rezervasyon kodun {pnr}."
+
+        if notes:
+            sentence += f" Ayrıca notta {notes}"
+
+        return sentence
+
+    going = None
+    returning = None
+    others = []
+
+    for item in merged[:4]:
+        direction = item.get("direction", "").casefold()
+
+        if "gidi" in direction and going is None:
+            going = item
+        elif ("dön" in direction or "don" in direction) and returning is None:
+            returning = item
+        else:
+            others.append(item)
+
+    sentences = ["Bora, biletlerini okudum."]
+
+    if going:
+        sentences.append(trip_sentence(going, "Gidiş"))
+
+    if returning:
+        sentences.append(trip_sentence(returning, "Dönüş"))
+
+    for item in others:
+        sentences.append(trip_sentence(item, "Seyahat"))
+
+    sentences.append(
+        "İstersen şimdi doğruladığım gidiş ve dönüş bilgilerini takvimine işleyebilirim."
     )
 
-    for idx, item in enumerate(merged[:4]):
-        title = item.get("direction") or f"Seyahat {idx + 1}"
-        lines.append(f"{title}:")
-
-        for label, key in field_map:
-            value = item.get(key, "")
-            if value:
-                lines.append(f"{label}: {value}")
-
-        lines.append("")
-
-    return "\n".join(lines).strip()
+    return " ".join(sentences)
 
 
 async def extract_calendar_items_from_attachment(

@@ -107,10 +107,32 @@ def prepare_tts_text(value: str) -> str:
 
     def spoken_time(match) -> str:
         hour, minute = int(match.group(1)), int(match.group(2))
-        rendered = f"saat {number_word(hour)}"
-        return rendered if minute == 0 else f"{rendered} {number_word(minute)}"
+
+        if 0 <= hour < 6:
+            daypart = "gece"
+        elif 6 <= hour < 12:
+            daypart = "sabah"
+        elif 12 <= hour < 17:
+            daypart = "öğleden sonra"
+        elif 17 <= hour < 22:
+            daypart = "akşam"
+        else:
+            daypart = "gece"
+
+        rendered = f"{daypart} saat {number_word(hour)}"
+
+        if minute == 0:
+            return rendered
+
+        return f"{rendered} {number_word(minute)}"
 
     text = re.sub(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", spoken_time, text)
+    text = re.sub(
+        r"\b(\d{1,2})\s+(Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık)\s+20\d{2}\s+(Pazartesi|Salı|Çarşamba|Perşembe|Cuma|Cumartesi|Pazar)\b",
+        r"\1 \2 \3",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(r"\bsaat\s+saat\b", "saat", text, flags=re.IGNORECASE)
     text = re.sub(r"\s*\n+\s*", ". ", text)
     text = re.sub(r"\s*:\s*", ". ", text)
