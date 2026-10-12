@@ -330,227 +330,98 @@ async def analyze_attachments(
     instruction: str,
     session_id: str,
 ) -> str:
-    """Analyze up to five images/PDFs together. Travel documents use validated JSON."""
-    import base64
+    """Analyze files one by one, then merge verified text results."""
+    partials = []
 
-    contents = []
-
-    image_files = [
-        (file_path, mime_type, filename)
-        for file_path, mime_type, filename in files
-        if mime_type.startswith("image/")
-    ]
-
-    pdf_files = [
-        (file_path, mime_type, filename)
-        for file_path, mime_type, filename in files
-        if mime_type == "application/pdf"
-    ]
-
-    # Birden fazla ekran görüntüsünü tek uzun belge haline getir.
-    if image_files:
-        rendered = []
-        target_width = 1400
-
-        for file_path, mime_type, filename in image_files:
-            img = Image.open(file_path).convert("RGB")
-
-            if img.width > target_width:
-                ratio = target_width / img.width
-                img = img.resize(
-                    (target_width, int(img.height * ratio))
-                )
-
-            rendered.append(img)
-
-        canvas_width = max(img.width for img in rendered)
-        padding = 24
-        canvas_height = (
-            sum(img.height for img in rendered)
-            + padding * (len(rendered) - 1)
-        )
-
-        sheet = Image.new(
-            "RGB",
-            (canvas_width, canvas_height),
-            "white"
-        )
-
-        y = 0
-        for img in rendered:
-            x = (canvas_width - img.width) // 2
-            sheet.paste(img, (x, y))
-            y += img.height + padding
-
-        import io
-        buffer = io.BytesIO()
-        sheet.save(
-            buffer,
-            format="JPEG",
-            quality=90,
-            optimize=True
-        )
-
-        contents.append(
-            ImageContent(
-                base64.b64encode(buffer.getvalue()).decode("ascii")
-            )
-        )
-
-    for file_path, mime_type, filename in pdf_files:
-        contents.append(
-            FileContentWithMimeType(
-                "application/pdf",
-                file_path
-            )
-        )
-
-    if not contents:
-        raise ValueError("Analiz edilecek desteklenen dosya bulunamadı")
-
-    prompt = instruction.strip() or "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
-    folded = prompt.casefold()
-
-    travel_mode = any(term in folded for term in (
-        "bilet", "seyahat", "gidiş", "gidis", "dönüş", "donus",
-        "otobüs", "otobus", "uçuş", "ucus", "rezervasyon"
-    ))
-
-    if not travel_mode:
-        system = """Sen NOVA'sın. Bora'nın yüklediği dosyaları birlikte incele.
-Dosyada açıkça görünmeyen hiçbir bilgiyi uydurma.
-Kısa, doğal ve tamamlanmış Türkiye Türkçesiyle cevap ver."""
-
-        chat = (
-            LlmChat(
-                api_key=os.environ["EMERGENT_LLM_KEY"],
-                session_id=session_id,
-                system_message=system,
-            )
-            .with_model("gemini", "gemini-2.5-flash")
-            .with_params(temperature=0.0, max_tokens=1400)
-        )
-
-        return str(await chat.send_message(
-            UserMessage(text=prompt, file_contents=contents)
-        )).strip()
-
-    system = """Sen NOVA'nın seyahat belgesi okuyucususun.
-
-Aynı mesajda verilen tüm görsel/PDF dosyalarını TEK BELGE SETİ olarak incele.
-Dosyada görünmeyen hiçbir şeyi tahmin etme veya uydurma.
-Gidiş ve dönüş belgelerini ayrı kayıtlar olarak çıkar.
-Çelişen bilgi varsa conflicts alanına yaz.
-
-SADECE geçerli JSON üret.
-Markdown, açıklama veya kod bloğu kullanma.
-
-Tam şema:
-{
-  "travels": [
-    {
-      "direction": "Gidiş veya Dönüş",
-      "passenger": "",
-      "company": "",
-      "date": "",
-      "departure_time": "",
-      "departure": "",
-      "arrival": "",
-      "arrival_time": "",
-      "pnr": "",
-      "seat": "",
-      "terminal": "",
-      "notes": ""
-    }
-  ],
-  "conflicts": []
-}
-
-Kurallar:
-- Görünmeyen alanı boş string bırak.
-- Tarihi belgede yazdığı biçimde koruyabilirsin.
-- Saati HH:MM biçiminde yaz.
-- JSON'u kısa tut.
-- En fazla 4 seyahat kaydı üret."""
-
-    last_error = None
-    data = None
-
-    for attempt in range(3):
-        chat = (
-            LlmChat(
-                api_key=os.environ["EMERGENT_LLM_KEY"],
-                session_id=f"{session_id}:json:{attempt}",
-                system_message=system,
-            )
-            .with_model("gemini", "gemini-2.5-flash")
-            .with_params(temperature=0.0, max_tokens=1600)
-        )
-
-        attempt_prompt = prompt
-        if attempt:
-            attempt_prompt += (
-                "\nÖnceki çıktı geçerli/tam JSON değildi. "
-                "Bu kez bütün JSON nesnesini baştan sona eksiksiz üret."
-            )
-
-        raw = await chat.send_message(
-            UserMessage(text=attempt_prompt, file_contents=contents)
-        )
-
-        text = str(raw).strip()
-        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
-        text = re.sub(r"\s*```$", "", text)
-
+    for index, (file_path, mime_type, filename) in enumerate(files):
         try:
-            candidate = json.loads(text)
-            travels = candidate.get("travels")
-            if isinstance(travels, list) and travels:
-                data = candidate
-                break
-            last_error = "travels boş"
+            result = await analyze_attachment(
+                file_path=file_path,
+                mime_type=mime_type,
+                filename=filename,
+                instruction=(
+                    "Bu dosyayı tek başına incele. "
+                    "Bilet/rezervasyon bilgilerini eksiksiz çıkar. "
+                    "Tarih, saat, firma, kalkış, varış, PNR, koltuk, terminal/peron "
+                    "ve önemli notları belirt. Görünmeyen bilgiyi uydurma."
+                ),
+                session_id=f"{session_id}:part:{index}",
+            )
+
+            if result and str(result).strip():
+                partials.append(
+                    f"DOSYA {index + 1} — {filename}\n{str(result).strip()}"
+                )
         except Exception as exc:
-            last_error = str(exc)
+            logger.warning(
+                "Single attachment analysis failed index=%s type=%s",
+                index,
+                type(exc).__name__,
+            )
 
-    if not data:
-        logger.warning("Travel attachment JSON incomplete after retries: %s", last_error)
-        return "Bora, biletlerin bir kısmını okuyabildim ama bilgileri eksiksiz doğrulayamadım. Eksik veya yarım bilgiyi takvime taşımamak için bu belge setini yeniden okumamız gerekiyor."
-
-    lines = []
-
-    for item in data.get("travels", [])[:4]:
-        direction = str(item.get("direction") or "Seyahat").strip()
-        lines.append(direction + ":")
-
-        fields = (
-            ("Yolcu", "passenger"),
-            ("Firma", "company"),
-            ("Tarih", "date"),
-            ("Kalkış saati", "departure_time"),
-            ("Kalkış noktası", "departure"),
-            ("Varış noktası", "arrival"),
-            ("Varış saati", "arrival_time"),
-            ("PNR / Rezervasyon", "pnr"),
-            ("Koltuk", "seat"),
-            ("Terminal / Peron", "terminal"),
-            ("Not", "notes"),
+    if not partials:
+        return (
+            "Bora, dosyaları okuyamadım. "
+            "Eksik bilgiyi tahmin ederek devam etmiyorum."
         )
 
-        for label, key in fields:
-            value = str(item.get(key) or "").strip()
-            if value:
-                lines.append(f"{label}: {value}")
+    merged_source = "\n\n".join(partials)
 
-        lines.append("")
+    system = """Sen NOVA'sın.
+Aşağıda aynı seyahate ait dosyaların ayrı ayrı çıkarılmış metinleri var.
 
-    conflicts = data.get("conflicts") or []
-    if conflicts:
-        lines.append("Çelişen bilgiler:")
-        for conflict in conflicts[:5]:
-            lines.append(f"- {conflict}")
+SADECE bu metinlerde açıkça bulunan bilgileri kullan.
+Hiçbir tarih, saat, firma, güzergah, PNR, koltuk, terminal veya fiyat uydurma.
 
-    result = "\n".join(lines).strip()
-    return result or "Bora, belgelerde doğrulayabildiğim seyahat bilgisi bulamadım."
+Aynı bilgileri birleştir.
+Gidiş ve dönüşü ayrı göster.
+Çelişen bilgi varsa açıkça belirt.
+
+Cevabı kısa ve tamamlanmış Türkiye Türkçesiyle ver.
+
+Şu düzeni kullan:
+
+Gidiş:
+Tarih:
+Kalkış saati:
+Firma:
+Kalkış:
+Varış:
+Varış saati:
+PNR / Rezervasyon:
+Koltuk:
+Terminal / Peron:
+Not:
+
+Dönüş:
+Tarih:
+Kalkış saati:
+Firma:
+Kalkış:
+Varış:
+Varış saati:
+PNR / Rezervasyon:
+Koltuk:
+Terminal / Peron:
+Not:
+
+Görünmeyen alanı 'Belgede görünmüyor' yaz."""
+
+    chat = (
+        LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=f"{session_id}:merge",
+            system_message=system,
+        )
+        .with_model("gemini", "gemini-2.5-flash")
+        .with_params(temperature=0.0, max_tokens=1400)
+    )
+
+    answer = await chat.send_message(
+        UserMessage(text=merged_source)
+    )
+
+    return str(answer).strip()
 
 
 async def extract_calendar_items_from_attachment(
