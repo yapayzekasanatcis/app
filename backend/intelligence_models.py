@@ -330,98 +330,196 @@ async def analyze_attachments(
     instruction: str,
     session_id: str,
 ) -> str:
-    """Analyze files one by one, then merge verified text results."""
-    partials = []
+    """Read each travel document separately as JSON, then merge deterministically."""
+    import base64
+    import json
+
+    records = []
+
+    system = """Sen NOVA'nın seyahat belgesi okuyucususun.
+
+Sana TEK bir görsel veya PDF verilecek.
+Sadece dosyada açıkça görülen bilgileri çıkar.
+Hiçbir tarih, saat, firma, PNR, güzergah, koltuk, terminal/peron veya fiyat uydurma.
+
+SADECE geçerli JSON döndür. Markdown veya açıklama yazma.
+
+Şema:
+{
+  "records": [
+    {
+      "direction": "",
+      "passenger": "",
+      "company": "",
+      "date": "",
+      "departure_time": "",
+      "departure": "",
+      "arrival": "",
+      "arrival_time": "",
+      "pnr": "",
+      "seat": "",
+      "terminal": "",
+      "notes": ""
+    }
+  ]
+}
+
+Kurallar:
+- Görünmeyen alan boş string olsun.
+- direction yalnız açıkça anlaşılıyorsa "Gidiş" veya "Dönüş" olsun.
+- Bir dosyada birden fazla gerçek seyahat kaydı varsa ayrı nesne üret.
+- Tarih ve saatleri dosyada gördüğün şekilde doğru aktar.
+- JSON kısa ve eksiksiz olsun."""
 
     for index, (file_path, mime_type, filename) in enumerate(files):
-        try:
-            result = await analyze_attachment(
-                file_path=file_path,
-                mime_type=mime_type,
-                filename=filename,
-                instruction=(
-                    "Bu dosyayı tek başına incele. "
-                    "Bilet/rezervasyon bilgilerini eksiksiz çıkar. "
-                    "Tarih, saat, firma, kalkış, varış, PNR, koltuk, terminal/peron "
-                    "ve önemli notları belirt. Görünmeyen bilgiyi uydurma."
-                ),
-                session_id=f"{session_id}:part:{index}",
-            )
+        contents = []
 
-            if result and str(result).strip():
-                partials.append(
-                    f"DOSYA {index + 1} — {filename}\n{str(result).strip()}"
+        if mime_type.startswith("image/"):
+            raw = Path(file_path).read_bytes()
+            contents.append(
+                ImageContent(base64.b64encode(raw).decode("ascii"))
+            )
+        elif mime_type == "application/pdf":
+            contents.append(
+                FileContentWithMimeType("application/pdf", file_path)
+            )
+        else:
+            continue
+
+        parsed = None
+
+        for attempt in range(3):
+            chat = (
+                LlmChat(
+                    api_key=os.environ["EMERGENT_LLM_KEY"],
+                    session_id=f"{session_id}:file:{index}:attempt:{attempt}",
+                    system_message=system,
                 )
-        except Exception as exc:
-            logger.warning(
-                "Single attachment analysis failed index=%s type=%s",
-                index,
-                type(exc).__name__,
+                .with_model("gemini", "gemini-2.5-flash")
+                .with_params(temperature=0.0, max_tokens=900)
             )
 
-    if not partials:
+            prompt = (
+                "Bu seyahat belgesini dikkatle oku ve yalnız doğruladığın bilgileri JSON olarak çıkar."
+            )
+            if attempt:
+                prompt += " Önceki çıktı geçerli JSON değildi; bu kez eksiksiz JSON üret."
+
+            raw_answer = await chat.send_message(
+                UserMessage(text=prompt, file_contents=contents)
+            )
+
+            text = str(raw_answer).strip()
+            text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+            text = re.sub(r"\s*```$", "", text)
+
+            try:
+                data = json.loads(text)
+                candidate = data.get("records", [])
+                if isinstance(candidate, list):
+                    parsed = candidate
+                    break
+            except Exception:
+                continue
+
+        if not parsed:
+            continue
+
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+
+            clean = {
+                "direction": str(item.get("direction") or "").strip(),
+                "passenger": str(item.get("passenger") or "").strip(),
+                "company": str(item.get("company") or "").strip(),
+                "date": str(item.get("date") or "").strip(),
+                "departure_time": str(item.get("departure_time") or "").strip(),
+                "departure": str(item.get("departure") or "").strip(),
+                "arrival": str(item.get("arrival") or "").strip(),
+                "arrival_time": str(item.get("arrival_time") or "").strip(),
+                "pnr": str(item.get("pnr") or "").strip(),
+                "seat": str(item.get("seat") or "").strip(),
+                "terminal": str(item.get("terminal") or "").strip(),
+                "notes": str(item.get("notes") or "").strip(),
+            }
+
+            if any(clean.values()):
+                records.append(clean)
+
+    if not records:
         return (
-            "Bora, dosyaları okuyamadım. "
+            "Bora, bilet görsellerinden güvenilir bir seyahat kaydı çıkaramadım. "
             "Eksik bilgiyi tahmin ederek devam etmiyorum."
         )
 
-    merged_source = "\n\n".join(partials)
+    # Aynı seyahatin farklı ekran görüntülerinden gelen kayıtlarını birleştir.
+    merged = []
 
-    system = """Sen NOVA'sın.
-Aşağıda aynı seyahate ait dosyaların ayrı ayrı çıkarılmış metinleri var.
+    def same_trip(a, b):
+        strong = 0
+        for key in ("date", "departure_time", "company", "departure", "arrival", "pnr"):
+            av = a.get(key, "").casefold()
+            bv = b.get(key, "").casefold()
+            if av and bv and av == bv:
+                strong += 1
+        return strong >= 2
 
-SADECE bu metinlerde açıkça bulunan bilgileri kullan.
-Hiçbir tarih, saat, firma, güzergah, PNR, koltuk, terminal veya fiyat uydurma.
+    for record in records:
+        target = next((item for item in merged if same_trip(item, record)), None)
 
-Aynı bilgileri birleştir.
-Gidiş ve dönüşü ayrı göster.
-Çelişen bilgi varsa açıkça belirt.
+        if target is None:
+            merged.append(record.copy())
+            continue
 
-Cevabı kısa ve tamamlanmış Türkiye Türkçesiyle ver.
+        for key, value in record.items():
+            if value and not target.get(key):
+                target[key] = value
 
-Şu düzeni kullan:
-
-Gidiş:
-Tarih:
-Kalkış saati:
-Firma:
-Kalkış:
-Varış:
-Varış saati:
-PNR / Rezervasyon:
-Koltuk:
-Terminal / Peron:
-Not:
-
-Dönüş:
-Tarih:
-Kalkış saati:
-Firma:
-Kalkış:
-Varış:
-Varış saati:
-PNR / Rezervasyon:
-Koltuk:
-Terminal / Peron:
-Not:
-
-Görünmeyen alanı 'Belgede görünmüyor' yaz."""
-
-    chat = (
-        LlmChat(
-            api_key=os.environ["EMERGENT_LLM_KEY"],
-            session_id=f"{session_id}:merge",
-            system_message=system,
+    # Tarihe göre sıralamaya çalış.
+    def sort_key(item):
+        return (
+            item.get("date", ""),
+            item.get("departure_time", ""),
         )
-        .with_model("gemini", "gemini-2.5-flash")
-        .with_params(temperature=0.0, max_tokens=1400)
+
+    merged.sort(key=sort_key)
+
+    # Direction boşsa iki kayıt varsa kronolojik olarak gidiş/dönüş ata.
+    if len(merged) >= 2:
+        if not merged[0].get("direction"):
+            merged[0]["direction"] = "Gidiş"
+        if not merged[1].get("direction"):
+            merged[1]["direction"] = "Dönüş"
+
+    lines = []
+
+    field_map = (
+        ("Tarih", "date"),
+        ("Kalkış saati", "departure_time"),
+        ("Firma", "company"),
+        ("Kalkış", "departure"),
+        ("Varış", "arrival"),
+        ("Varış saati", "arrival_time"),
+        ("PNR / Rezervasyon", "pnr"),
+        ("Koltuk", "seat"),
+        ("Terminal / Peron", "terminal"),
+        ("Yolcu", "passenger"),
+        ("Not", "notes"),
     )
 
-    answer = await chat.send_message(
-        UserMessage(text=merged_source)
-    )
+    for idx, item in enumerate(merged[:4]):
+        title = item.get("direction") or f"Seyahat {idx + 1}"
+        lines.append(f"{title}:")
 
-    return str(answer).strip()
+        for label, key in field_map:
+            value = item.get(key, "")
+            if value:
+                lines.append(f"{label}: {value}")
+
+        lines.append("")
+
+    return "\n".join(lines).strip()
 
 
 async def extract_calendar_items_from_attachment(
