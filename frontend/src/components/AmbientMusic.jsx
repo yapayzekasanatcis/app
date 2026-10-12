@@ -1,10 +1,18 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Volume2, VolumeX } from "lucide-react";
 import { toast } from "sonner";
 
-export default function AmbientMusic() {
+export default function AmbientMusic({ novaState }) {
   const audioRef = useRef(null);
   const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !playing) return;
+
+    audio.volume = novaState === "speaking" ? 0.05 : 0.14;
+  }, [novaState, playing]);
+
 
   const toggle = async () => {
     const audio = audioRef.current;
@@ -17,7 +25,7 @@ export default function AmbientMusic() {
     }
 
     try {
-      audio.volume = 0.07;
+      audio.volume = 0.14;
       await audio.play();
       setPlaying(true);
     } catch {

@@ -4,6 +4,7 @@ import Sidebar from "@/components/Sidebar";
 import NovaPortrait from "@/components/NovaPortrait";
 import PushToTalk from "@/components/PushToTalk";
 import ChatPanel from "@/components/ChatPanel";
+import AmbientMusic from "@/components/AmbientMusic";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogHeader } from "@/components/ui/dialog";
 import { MessageSquare } from "lucide-react";
 
@@ -66,6 +67,8 @@ export const Layout = () => {
           <ChatPanel onState={setNovaState} extraMessage={lastReply} />
         </div>
       </aside>
+
+      <AmbientMusic novaState={novaState} />
 
       {/* Spacer for desktop right panel */}
       <style>{`
