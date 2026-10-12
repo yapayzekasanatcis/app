@@ -361,7 +361,7 @@ Kısa ve doğal Türkiye Türkçesi kullan."""
             system_message=system,
         )
         .with_model("gemini", "gemini-2.5-flash")
-        .with_params(temperature=0.0, max_tokens=1500)
+        .with_params(temperature=0.0, max_tokens=2200)
     )
 
     import base64
@@ -384,9 +384,43 @@ Kısa ve doğal Türkiye Türkçesi kullan."""
         "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
     )
 
-    return await chat.send_message(
-        UserMessage(text=prompt, file_contents=contents)
+    final_prompt = (
+        prompt
+        + "\n\nCevabı kısa ve düz metin ver. Markdown başlıkları kullanma. "
+          "Her satırda yalnız bir alan olsun. Gereksiz açıklama yapma."
     )
+
+    answer = await chat.send_message(
+        UserMessage(text=final_prompt, file_contents=contents)
+    )
+
+    text = str(answer).strip()
+
+    incomplete_markers = (
+        ":",
+        "-",
+        "Gidiş Tarihi: 1",
+        "Dönüş Tarihi: 1",
+    )
+
+    looks_incomplete = (
+        not text
+        or text.endswith(incomplete_markers)
+        or len(text) < 120
+    )
+
+    if looks_incomplete:
+        retry_prompt = (
+            final_prompt
+            + "\n\nÖnceki çıktı eksik kaldı. Baştan sona TAMAMLA. "
+              "Yalnızca doğrulanan alanları yaz ve son satırı mutlaka tamamla."
+        )
+        answer = await chat.send_message(
+            UserMessage(text=retry_prompt, file_contents=contents)
+        )
+        text = str(answer).strip()
+
+    return text
 
 
 async def extract_calendar_items_from_attachment(
