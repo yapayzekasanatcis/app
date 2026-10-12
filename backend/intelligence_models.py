@@ -519,21 +519,21 @@ Kurallar:
         if time_value:
             parts.append(f"saat {time_value}'de")
 
-        if departure:
-            parts.append(f"{departure}'dan")
-
         if company:
-            parts.append(f"{company} ile")
+            parts.append(f"{company} ile yolculuk yapıyorsun")
+
+        sentence = " ".join(parts).strip() + "."
+
+        route_parts = []
+
+        if departure:
+            route_parts.append(f"kalkış noktan {departure}")
 
         if arrival:
-            parts.append(f"{arrival}'a")
+            route_parts.append(f"varış noktan {arrival}")
 
-        sentence = " ".join(parts).strip()
-
-        if arrival:
-            sentence += " gidiyorsun"
-
-        sentence += "."
+        if route_parts:
+            sentence += " " + ", ".join(route_parts) + "."
 
         extras = []
 
