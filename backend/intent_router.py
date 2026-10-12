@@ -238,7 +238,23 @@ def route_message(message: str, now: datetime) -> RouteDecision:
         return RouteDecision("pending_tasks", "workspace", **base)
     if "komagene" in folded and any(term in folded for term in ("rutin", "bu hafta", "ne yap")):
         return RouteDecision("weekly_routines", "workspace", **base)
-    if any(term in folded for term in ("takvimimde", "programim", "ne isim var", "nikah saat kac", "etkinligim")) or temporal.target_date:
+    conversational_general = any(term in folded for term in (
+        "moral ver", "moral verir misin", "biraz yoruldum", "yoruldum",
+        "sohbet edelim", "konusalim", "konuşalım", "nasilsin", "nasılsın",
+        "beni rahatlat", "keyfim yok", "canim sikkin", "canım sıkkın",
+        "biraz konus", "biraz konuş"
+    ))
+
+    if (
+        not conversational_general
+        and (
+            any(term in folded for term in (
+                "takvimimde", "programim", "ne isim var",
+                "nikah saat kac", "etkinligim"
+            ))
+            or temporal.target_date
+        )
+    ):
         return RouteDecision("calendar_date_query", "calendar", **base)
 
     birthday_recommendation = (
