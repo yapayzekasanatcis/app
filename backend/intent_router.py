@@ -254,7 +254,10 @@ def route_message(message: str, now: datetime) -> RouteDecision:
 
     direct_memory = any(term in folded for term in (
         "dogum gun", "dogum gunum", "hangi corbalari severim", "arabam ne",
-        "meslegim ne", "mesleklerim neler", "ben kimim", "hakkimda ne biliyorsun"
+        "meslegim ne", "mesleklerim neler", "ben kimim", "hakkimda ne biliyorsun",
+        "beni nasil tanimlarsin", "beni nasıl tanımlarsın",
+        "beni nasil tarif edersin", "beni nasıl tarif edersin",
+        "beni anlat", "sence ben nasil biriyim", "sence ben nasıl biriyim"
     ))
     if direct_memory:
         return RouteDecision("personal_memory", "memory", **base)
