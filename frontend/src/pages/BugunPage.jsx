@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { briefingApi } from "@/lib/api";
 import { toast } from "sonner";
-import { Clock, Flag, Volume2, Loader2, Link2, CalendarCheck } from "lucide-react";
+import { Clock, Flag, Volume2, Loader2, Link2, CalendarCheck, CalendarDays } from "lucide-react";
 import { voiceApi } from "@/lib/api";
 import { useOutletContext, Link } from "react-router-dom";
 import { useWorkspaceData } from "@/context/WorkspaceDataContext";
@@ -15,6 +15,20 @@ export default function BugunPage() {
   const { data: workspace } = useWorkspaceData();
   const todayEvents = workspace?.today_events || [];
   const priorities = workspace?.priorities || [];
+  const weekDays = [];
+  if (workspace?.week_start) {
+    const monday = new Date(`${workspace.week_start}T12:00:00`);
+    for (let index = 0; index < 7; index += 1) {
+      const current = new Date(monday);
+      current.setDate(monday.getDate() + index);
+      const key = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}`;
+      weekDays.push({
+        key,
+        date: current,
+        items: (workspace.week_events || []).filter(event => event.start_time?.slice(0, 10) === key)
+      });
+    }
+  }
 
   useEffect(() => {
     briefingApi.today()
@@ -149,6 +163,81 @@ export default function BugunPage() {
           )}
         </div>
       </div>
+
+      {/* Mini weekly calendar */}
+      {weekDays.length > 0 && (
+        <section className="nova-card p-4 sm:p-5" data-testid="mini-week-calendar">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-[color:var(--nova-amber)]" />
+              <div className="font-mono-nova text-xs uppercase tracking-widest text-[color:var(--nova-text-3)]">
+                Bu Hafta
+              </div>
+            </div>
+            <Link
+              to="/bu-hafta"
+              className="text-xs text-[color:var(--nova-amber)] hover:underline"
+            >
+              Haftayı aç
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {weekDays.map(({ key, date, items }) => {
+              const isToday = key === new Date().toISOString().slice(0, 10);
+              const firstEvent = items[0];
+
+              return (
+                <div
+                  key={key}
+                  className={`rounded-xl border px-3 py-2.5 min-h-[88px] transition-colors ${
+                    isToday
+                      ? "border-[color:var(--nova-amber)]/70 bg-[color:var(--nova-amber)]/10"
+                      : "border-[color:var(--nova-border)] bg-white/[0.015]"
+                  }`}
+                  data-testid={`mini-week-day-${key}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className={`text-sm font-medium leading-none ${isToday ? "text-[color:var(--nova-amber)]" : "text-[color:var(--nova-text)]"}`}>
+                        {date.toLocaleDateString("tr-TR", { weekday: "short" })}
+                      </div>
+                      <div className="text-[10px] text-[color:var(--nova-text-3)] mt-1">
+                        {date.toLocaleDateString("tr-TR", { day: "numeric", month: "short" })}
+                      </div>
+                    </div>
+                    {isToday && (
+                      <span className="text-[8px] uppercase tracking-wider text-[color:var(--nova-amber)]">
+                        Bugün
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-2 min-w-0">
+                    {firstEvent ? (
+                      <>
+                        <div className="text-[10px] text-[color:var(--nova-amber)] font-mono-nova">
+                          {firstEvent.start_time?.includes("T") ? firstEvent.start_time.slice(11, 16) : "Tüm gün"}
+                        </div>
+                        <div className="text-[11px] leading-snug text-[color:var(--nova-text-2)] truncate mt-0.5">
+                          {firstEvent.title}
+                        </div>
+                        {items.length > 1 && (
+                          <div className="text-[9px] text-[color:var(--nova-amber)] mt-1">
+                            +{items.length - 1} daha
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-sm text-[color:var(--nova-text-3)] mt-1">—</div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Google connection banner */}
       {workspace && !workspace.sources?.calendar?.connected && (
