@@ -329,41 +329,7 @@ async def analyze_attachments(
     instruction: str,
     session_id: str,
 ) -> str:
-    """Analyze up to five images/PDFs together as one document set."""
-    system = """Sen NOVA'sın. Bora'nın aynı mesajda yüklediği dosyaları tek bir belge seti olarak incele.
-
-Dosyalarda açıkça görünmeyen hiçbir bilgiyi uydurma.
-Aynı seyahate ait birden fazla bilet/görsel varsa bilgileri birleştir.
-Çelişen bilgi varsa bunu açıkça belirt.
-
-Bilet veya rezervasyon setinde mümkünse şunları çıkar:
-- yolcu
-- firma
-- gidiş tarihi
-- gidiş kalkış saati
-- kalkış noktası
-- varış noktası
-- varış saati
-- dönüş tarihi
-- dönüş saati
-- PNR / rezervasyon kodu
-- koltuk
-- terminal / havalimanı
-- önemli notlar
-
-Bu aşamada takvime yazma yapma.
-Kısa ve doğal Türkiye Türkçesi kullan."""
-
-    chat = (
-        LlmChat(
-            api_key=os.environ["EMERGENT_LLM_KEY"],
-            session_id=session_id,
-            system_message=system,
-        )
-        .with_model("gemini", "gemini-2.5-flash")
-        .with_params(temperature=0.0, max_tokens=2200)
-    )
-
+    """Analyze up to five images/PDFs together. Travel documents use validated JSON."""
     import base64
 
     contents = []
@@ -380,47 +346,149 @@ Kısa ve doğal Türkiye Türkçesi kullan."""
         else:
             raise ValueError(f"Desteklenmeyen dosya türü: {filename}")
 
-    prompt = instruction.strip() or (
-        "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
-    )
+    prompt = instruction.strip() or "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
+    folded = prompt.casefold()
 
-    final_prompt = (
-        prompt
-        + "\n\nCevabı kısa ve düz metin ver. Markdown başlıkları kullanma. "
-          "Her satırda yalnız bir alan olsun. Gereksiz açıklama yapma."
-    )
+    travel_mode = any(term in folded for term in (
+        "bilet", "seyahat", "gidiş", "gidis", "dönüş", "donus",
+        "otobüs", "otobus", "uçuş", "ucus", "rezervasyon"
+    ))
 
-    answer = await chat.send_message(
-        UserMessage(text=final_prompt, file_contents=contents)
-    )
+    if not travel_mode:
+        system = """Sen NOVA'sın. Bora'nın yüklediği dosyaları birlikte incele.
+Dosyada açıkça görünmeyen hiçbir bilgiyi uydurma.
+Kısa, doğal ve tamamlanmış Türkiye Türkçesiyle cevap ver."""
 
-    text = str(answer).strip()
-
-    incomplete_markers = (
-        ":",
-        "-",
-        "Gidiş Tarihi: 1",
-        "Dönüş Tarihi: 1",
-    )
-
-    looks_incomplete = (
-        not text
-        or text.endswith(incomplete_markers)
-        or len(text) < 120
-    )
-
-    if looks_incomplete:
-        retry_prompt = (
-            final_prompt
-            + "\n\nÖnceki çıktı eksik kaldı. Baştan sona TAMAMLA. "
-              "Yalnızca doğrulanan alanları yaz ve son satırı mutlaka tamamla."
+        chat = (
+            LlmChat(
+                api_key=os.environ["EMERGENT_LLM_KEY"],
+                session_id=session_id,
+                system_message=system,
+            )
+            .with_model("gemini", "gemini-2.5-flash")
+            .with_params(temperature=0.0, max_tokens=1400)
         )
-        answer = await chat.send_message(
-            UserMessage(text=retry_prompt, file_contents=contents)
-        )
-        text = str(answer).strip()
 
-    return text
+        return str(await chat.send_message(
+            UserMessage(text=prompt, file_contents=contents)
+        )).strip()
+
+    system = """Sen NOVA'nın seyahat belgesi okuyucususun.
+
+Aynı mesajda verilen tüm görsel/PDF dosyalarını TEK BELGE SETİ olarak incele.
+Dosyada görünmeyen hiçbir şeyi tahmin etme veya uydurma.
+Gidiş ve dönüş belgelerini ayrı kayıtlar olarak çıkar.
+Çelişen bilgi varsa conflicts alanına yaz.
+
+SADECE geçerli JSON üret.
+Markdown, açıklama veya kod bloğu kullanma.
+
+Tam şema:
+{
+  "travels": [
+    {
+      "direction": "Gidiş veya Dönüş",
+      "passenger": "",
+      "company": "",
+      "date": "",
+      "departure_time": "",
+      "departure": "",
+      "arrival": "",
+      "arrival_time": "",
+      "pnr": "",
+      "seat": "",
+      "terminal": "",
+      "notes": ""
+    }
+  ],
+  "conflicts": []
+}
+
+Kurallar:
+- Görünmeyen alanı boş string bırak.
+- Tarihi belgede yazdığı biçimde koruyabilirsin.
+- Saati HH:MM biçiminde yaz.
+- JSON'u kısa tut.
+- En fazla 4 seyahat kaydı üret."""
+
+    last_error = None
+    data = None
+
+    for attempt in range(3):
+        chat = (
+            LlmChat(
+                api_key=os.environ["EMERGENT_LLM_KEY"],
+                session_id=f"{session_id}:json:{attempt}",
+                system_message=system,
+            )
+            .with_model("gemini", "gemini-2.5-flash")
+            .with_params(temperature=0.0, max_tokens=1600)
+        )
+
+        attempt_prompt = prompt
+        if attempt:
+            attempt_prompt += (
+                "\nÖnceki çıktı geçerli/tam JSON değildi. "
+                "Bu kez bütün JSON nesnesini baştan sona eksiksiz üret."
+            )
+
+        raw = await chat.send_message(
+            UserMessage(text=attempt_prompt, file_contents=contents)
+        )
+
+        text = str(raw).strip()
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s*```$", "", text)
+
+        try:
+            candidate = json.loads(text)
+            travels = candidate.get("travels")
+            if isinstance(travels, list) and travels:
+                data = candidate
+                break
+            last_error = "travels boş"
+        except Exception as exc:
+            last_error = str(exc)
+
+    if not data:
+        logger.warning("Travel attachment JSON incomplete after retries: %s", last_error)
+        return "Bora, biletlerin bir kısmını okuyabildim ama bilgileri eksiksiz doğrulayamadım. Eksik veya yarım bilgiyi takvime taşımamak için bu belge setini yeniden okumamız gerekiyor."
+
+    lines = []
+
+    for item in data.get("travels", [])[:4]:
+        direction = str(item.get("direction") or "Seyahat").strip()
+        lines.append(direction + ":")
+
+        fields = (
+            ("Yolcu", "passenger"),
+            ("Firma", "company"),
+            ("Tarih", "date"),
+            ("Kalkış saati", "departure_time"),
+            ("Kalkış noktası", "departure"),
+            ("Varış noktası", "arrival"),
+            ("Varış saati", "arrival_time"),
+            ("PNR / Rezervasyon", "pnr"),
+            ("Koltuk", "seat"),
+            ("Terminal / Peron", "terminal"),
+            ("Not", "notes"),
+        )
+
+        for label, key in fields:
+            value = str(item.get(key) or "").strip()
+            if value:
+                lines.append(f"{label}: {value}")
+
+        lines.append("")
+
+    conflicts = data.get("conflicts") or []
+    if conflicts:
+        lines.append("Çelişen bilgiler:")
+        for conflict in conflicts[:5]:
+            lines.append(f"- {conflict}")
+
+    result = "\n".join(lines).strip()
+    return result or "Bora, belgelerde doğrulayabildiğim seyahat bilgisi bulamadım."
 
 
 async def extract_calendar_items_from_attachment(
