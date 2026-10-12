@@ -4,7 +4,6 @@ import Sidebar from "@/components/Sidebar";
 import NovaPortrait from "@/components/NovaPortrait";
 import PushToTalk from "@/components/PushToTalk";
 import ChatPanel from "@/components/ChatPanel";
-import AmbientMusic from "@/components/AmbientMusic";
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogHeader } from "@/components/ui/dialog";
 import { MessageSquare } from "lucide-react";
 
@@ -15,7 +14,6 @@ export const Layout = () => {
   return (
     <div className="min-h-screen bg-[color:var(--nova-bg)] text-[color:var(--nova-text)]">
       <Sidebar />
-      <AmbientMusic />
 
       <main className="lg:ml-64 min-h-screen">
         <div className="max-w-7xl mx-auto px-4 md:px-8 pt-16 lg:pt-10 pb-32">
