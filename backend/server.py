@@ -31,7 +31,7 @@ from assistant_context import LIVE_WEB_INTENTS, build_chat_package
 from capability_registry import get_capability_registry
 from connector_router import execute_read_connector
 from conversation_context import save_conversation_context
-from intelligence_models import answer_general_knowledge, answer_live_web
+from intelligence_models import answer_general_knowledge, answer_live_web, analyze_attachment
 from intent_router import route_message
 from personal_memory import required_memory_fact_prefix
 from response_composer import apply_freshness_guard, ensure_complete_response, ensure_requested_items
@@ -777,6 +777,65 @@ async def stt(file: UploadFile = File(...), user: dict = Depends(current_user)):
         if path:
             Path(path).unlink(missing_ok=True)
 
+
+
+# ---------- Attachments ----------
+ALLOWED_ATTACHMENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+}
+MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024
+
+
+@api.post("/attachments/analyze")
+async def analyze_uploaded_attachment(
+    file: UploadFile = File(...),
+    instruction: str = Form(""),
+    user: dict = Depends(current_user),
+):
+    mime_type = (file.content_type or "").lower()
+    if mime_type not in ALLOWED_ATTACHMENT_TYPES:
+        raise HTTPException(
+            400,
+            "Şimdilik yalnız JPG, PNG, WebP ve PDF yükleyebilirsin."
+        )
+
+    raw = await file.read(MAX_ATTACHMENT_BYTES + 1)
+    if not raw:
+        raise HTTPException(400, "Dosya boş.")
+    if len(raw) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(413, "Dosya en fazla 12 MB olabilir.")
+
+    suffix = Path(file.filename or "dosya").suffix
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(raw)
+            temp_path = tmp.name
+
+        answer = await analyze_attachment(
+            temp_path,
+            mime_type,
+            file.filename or "dosya",
+            instruction,
+            f"{user['id']}:attachment",
+        )
+
+        return {
+            "answer": answer,
+            "filename": file.filename or "dosya",
+            "mime_type": mime_type,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Attachment analysis failed type=%s", type(exc).__name__)
+        raise HTTPException(500, "Dosya şu anda analiz edilemedi.")
+    finally:
+        if temp_path:
+            Path(temp_path).unlink(missing_ok=True)
 
 # ---------- TTS ----------
 @api.post("/voice/tts")

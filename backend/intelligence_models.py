@@ -4,7 +4,7 @@ import logging
 import os
 import re
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage
+from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent, FileContentWithMimeType
 
 import google_integration as gint
 from date_resolver import fold_turkish
@@ -267,3 +267,56 @@ async def answer_live_web(
     if workspace_context and "eşleşen kayıt bulunamadı" not in workspace_context:
         answer = "Takvim/Workspace bağlamı:\n" + workspace_context + "\n\nCanlı araştırma:\n" + answer
     return answer, sources
+
+async def analyze_attachment(
+    file_path: str,
+    mime_type: str,
+    filename: str,
+    instruction: str,
+    session_id: str,
+) -> str:
+    """Analyze one user-supplied image or PDF without inventing missing fields."""
+    system = """Sen NOVA'sın. Bora'nın yüklediği belgeyi dikkatle incele.
+Belgede açıkça görünmeyen hiçbir tarihi, saati, firma adını, güzergahı, PNR'ı,
+rezervasyon kodunu, terminali, havalimanını veya fiyatı uydurma.
+
+Bilet/rezervasyon belgesiyse mümkün olan alanları doğal Türkçe ile çıkar:
+- yolcu
+- firma / havayolu / otobüs firması
+- gidiş tarihi ve kalkış saati
+- kalkış yeri
+- varış yeri ve varsa varış saati
+- dönüş tarihi ve saati
+- PNR / rezervasyon kodu
+- koltuk
+- terminal / havalimanı
+- önemli notlar
+
+Kullanıcı takvime işleme talebinde bulunmuş olsa bile bu aşamada yalnızca
+belgeden doğruladığın bilgileri çıkar. Eksik alanları 'belgede görünmüyor'
+diye belirt. Kısa, temiz ve doğal Türkiye Türkçesi kullan."""
+
+    chat = (
+        LlmChat(
+            api_key=os.environ["EMERGENT_LLM_KEY"],
+            session_id=session_id,
+            system_message=system,
+        )
+        .with_model("gemini", "gemini-2.5-flash")
+        .with_params(temperature=0.0, max_tokens=1200)
+    )
+
+    prompt = instruction.strip() or "Bu belgeyi incele ve içindeki önemli bilgileri çıkar."
+
+    if mime_type.startswith("image/"):
+        import base64
+        raw = Path(file_path).read_bytes()
+        content = ImageContent(base64.b64encode(raw).decode("ascii"))
+    elif mime_type == "application/pdf":
+        content = FileContentWithMimeType("application/pdf", file_path)
+    else:
+        raise ValueError("Desteklenmeyen dosya türü")
+
+    return await chat.send_message(
+        UserMessage(text=prompt, file_contents=[content])
+    )

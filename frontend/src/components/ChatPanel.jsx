@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Send, Loader2 } from "lucide-react";
-import { chatApi, voiceApi } from "@/lib/api";
+import { Send, Loader2, Paperclip, X } from "lucide-react";
+import { chatApi, voiceApi, attachmentApi } from "@/lib/api";
 import { toast } from "sonner";
 
 export const ChatPanel = ({ onState, extraMessage }) => {
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState([]);
   const [busy, setBusy] = useState(false);
+  const [attachment, setAttachment] = useState(null);
   const scrollRef = useRef(null);
   const audioRef = useRef(null);
+  const fileRef = useRef(null);
 
   useEffect(() => {
     chatApi.history().then((rows) => setMsgs(rows)).catch(() => {});
@@ -29,13 +31,24 @@ export const ChatPanel = ({ onState, extraMessage }) => {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if ((!text && !attachment) || busy) return;
+
+    const selectedFile = attachment;
+    const displayText = selectedFile
+      ? `${text || "Bu dosyayı incele."}\n📎 ${selectedFile.name}`
+      : text;
+
     setInput("");
-    setMsgs(m => [...m, { role: "user", content: text, created_at: new Date().toISOString() }]);
+    setAttachment(null);
+    setMsgs(m => [...m, { role: "user", content: displayText, created_at: new Date().toISOString() }]);
     setBusy(true);
     onState?.("thinking");
     try {
-      const { answer, sources = [] } = await chatApi.send(text);
+      const result = selectedFile
+        ? await attachmentApi.analyze(selectedFile, text || "Bu dosyayı incele ve önemli bilgileri çıkar.")
+        : await chatApi.send(text);
+
+      const { answer, sources = [] } = result;
       setMsgs(m => [...m, { role: "assistant", content: answer, sources, created_at: new Date().toISOString() }]);
       onState?.("speaking");
       try {
@@ -109,7 +122,52 @@ export const ChatPanel = ({ onState, extraMessage }) => {
         )}
       </div>
 
-      <div className="shrink-0 min-w-0 p-3 border-t border-[color:var(--nova-border)] flex gap-2">
+      <div className="shrink-0 min-w-0 p-3 border-t border-[color:var(--nova-border)]">
+        {attachment && (
+          <div className="mb-2 flex items-center gap-2 rounded-xl border border-[color:var(--nova-border)] bg-[color:var(--nova-bg-3)] px-3 py-2 text-xs text-[color:var(--nova-text-2)]">
+            <Paperclip className="h-3.5 w-3.5 shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{attachment.name}</span>
+            <button
+              type="button"
+              onClick={() => setAttachment(null)}
+              className="rounded-md p-1 hover:bg-white/5"
+              aria-label="Dosyayı kaldır"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (!file) return;
+              if (file.size > 12 * 1024 * 1024) {
+                toast.error("Dosya çok büyük", { description: "En fazla 12 MB yükleyebilirsin." });
+                e.target.value = "";
+                return;
+              }
+              setAttachment(file);
+              e.target.value = "";
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            className="rounded-xl border border-[color:var(--nova-border)] bg-[color:var(--nova-bg-3)] px-3 text-[color:var(--nova-text-2)] hover:text-[color:var(--nova-text)] disabled:opacity-50"
+            title="Görsel veya PDF ekle"
+            aria-label="Dosya ekle"
+          >
+            <Paperclip className="h-4 w-4" />
+          </button>
+
         <input
           data-testid="chat-input"
           value={input}
@@ -120,12 +178,13 @@ export const ChatPanel = ({ onState, extraMessage }) => {
         />
         <button
           onClick={send}
-          disabled={busy || !input.trim()}
+          disabled={busy || (!input.trim() && !attachment)}
           data-testid="chat-send-button"
           className="rounded-xl bg-[color:var(--nova-amber)] text-black px-4 flex items-center justify-center hover:bg-[color:var(--nova-amber-hover)] transition-colors disabled:opacity-50"
         >
           <Send className="h-4 w-4" />
         </button>
+        </div>
       </div>
     </div>
   );

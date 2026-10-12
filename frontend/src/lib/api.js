@@ -115,3 +115,15 @@ export const voiceApi = {
     return r.data;
   },
 };
+
+
+export const attachmentApi = {
+  analyze: (file, instruction = "") => {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("instruction", instruction);
+    return api.post("/attachments/analyze", fd, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }).then(r => r.data);
+  },
+};
