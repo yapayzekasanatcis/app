@@ -405,13 +405,33 @@ async def build_chat_package(
 ) -> dict:
     now = datetime.now(gint.ISTANBUL_TZ)
     stored_context = await get_conversation_context(db, user_id, conversation_id)
+
+    # Aynı sohbet içindeki son mesajları kısa süreli konuşma hafızası olarak taşı.
+    recent_rows = await db.messages.find(
+        {"user_id": user_id, "conversation_id": conversation_id},
+        {"_id": 0, "role": 1, "content": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(10).to_list(length=10)
+
+    recent_rows.reverse()
+
+    recent_context_lines = []
+    for row in recent_rows:
+        role = row.get("role")
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        label = "Bora" if role == "user" else "NOVA"
+        recent_context_lines.append(f"{label}: {content}")
+
+    recent_context = "\n".join(recent_context_lines)
+
     follow_up = resolve_follow_up(message, stored_context)
     decision = route_decision or route_message(message, now)
     intent, target_date = decision.intent, decision.target_date
     memory = None
     if not follow_up and (intent == "personal_memory" or (intent == "general" and decision.memory_context_keys)):
         memory = personal_memory_reply(message, now)
-    prior_context = ""
+    prior_context = recent_context
     if follow_up:
         intent = follow_up["intent"]
         prior_context = follow_up.get("prior_context", "")
@@ -446,7 +466,10 @@ async def build_chat_package(
             "requested_items": decision.requested_items,
         }
     elif decision.memory_context_keys:
-        prior_context = personal_context_for_keys(decision.memory_context_keys)
+        personal_context = personal_context_for_keys(decision.memory_context_keys)
+        prior_context = "\n\n".join(
+            part for part in (recent_context, personal_context) if part
+        )
     if intent_override:
         intent = intent_override
         target_date = now.date() if intent in {"briefing", "today_schedule"} else target_date
