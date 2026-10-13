@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Loader2 } from "lucide-react";
 import { voiceApi, chatApi } from "@/lib/api";
 import { toast } from "sonner";
@@ -13,6 +13,19 @@ export const PushToTalk = ({ onState, onReply, testId }) => {
   const mediaRef = useRef(null);
   const chunksRef = useRef([]);
   const audioRef = useRef(null);
+
+  useEffect(() => {
+    const stopOtherNovaAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current = null;
+      }
+    };
+
+    window.addEventListener("nova-stop-audio", stopOtherNovaAudio);
+    return () => window.removeEventListener("nova-stop-audio", stopOtherNovaAudio);
+  }, []);
 
   const start = async () => {
     try {
@@ -33,11 +46,15 @@ export const PushToTalk = ({ onState, onReply, testId }) => {
             return;
           }
           toast.message("Bora", { description: text });
-          const { answer } = await chatApi.send(text, "default", "voice");
+          const conversationId =
+            localStorage.getItem("nova-conversation-id") || "default";
+
+          const { answer } = await chatApi.send(text, conversationId, "voice");
           onReply?.({ question: text, answer });
           onState?.("speaking");
           try {
             const audioBlob = await voiceApi.tts(answer);
+            window.dispatchEvent(new Event("nova-stop-audio"));
             const url = URL.createObjectURL(audioBlob);
             if (audioRef.current) audioRef.current.pause();
             audioRef.current = new Audio(url);

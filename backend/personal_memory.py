@@ -63,6 +63,70 @@ BORA_360_PROFILE = {
         "Projelerini sistemli ve kodlanmış üretim akışlarıyla yürütür.",
     ],
 
+    "culture_and_entertainment": {
+        "bora": {
+            "movies": [
+                "Korku",
+                "Komedi",
+                "Bilim kurgu",
+                "Fantastik",
+                "3D gösterimler özellikle tercih edilir",
+            ],
+            "concerts": [
+                "Senfoni konserleri",
+                "Hayko Cepkin çizgisinde rock / alternatif konserler",
+                "Rap konserleri",
+                "Özel Türk Sanat Müziği konserleri",
+            ],
+            "theatre_and_stage": [
+                "Komedi tiyatroları",
+                "Kumpanya gösterileri",
+                "Anadolu Ateşi benzeri büyük dans prodüksiyonları",
+                "Güldür Güldür ve Çok Güzel Hareketler Bunlar benzeri sahne performansları",
+            ],
+        },
+        "tugba": {
+            "movies": [
+                "Romantik komedi",
+                "Bilim kurgu",
+                "Komedi",
+                "Aksiyon",
+                "Fantastik",
+                "Harry Potter ve Yüzüklerin Efendisi çizgisindeki fantastik yapımlar",
+            ],
+            "concerts": [
+                "Senfoni konserleri",
+                "Hayko Cepkin çizgisinde rock / alternatif konserler",
+                "Rap konserleri",
+                "Özel Türk Sanat Müziği konserleri",
+            ],
+            "theatre_and_stage": [
+                "Komedi tiyatroları",
+                "Kumpanya gösterileri",
+                "Anadolu Ateşi benzeri büyük dans prodüksiyonları",
+                "Güldür Güldür ve Çok Güzel Hareketler Bunlar benzeri sahne performansları",
+            ],
+        },
+        "shared_preferences": [
+            "Bilim kurgu, fantastik ve komedi yapımları ortak yüksek önceliklidir.",
+            "Senfoni, rock/alternatif, rap ve özel Türk Sanat Müziği konserleri ortak ilgi alanıdır.",
+            "Komedi tiyatrosu, büyük dans prodüksiyonları ve sahne şovları ortak ilgi alanıdır.",
+            "Canlı müzik mekânları özellikle özel gün ve özel programlarda değerlendirilebilir.",
+            "Festival ve özel etkinlikler uygunluk durumuna göre önerilebilir.",
+            "Sergi, deneyim alanı ve özel kültürel etkinlikler uygunluk durumuna göre önerilebilir.",
+        ],
+        "recommendation_rules": [
+            "İki kişiye de uyan etkinlikleri en yüksek öncelikle öner.",
+            "Sadece Bora'ya veya Tuğba'ya daha çok uyan önerileri bunu açıkça belirterek sun.",
+            "Bora için 3D film gösterimlerine ek ağırlık ver.",
+            "Bilim kurgu ve fantastik yapımlarda ortak uygunluk puanını yükselt.",
+            "Romantik komediyi Tuğba için artı, Bora için nötr kabul et.",
+            "Korku filmlerini Bora için artı kabul et.",
+            "Büyük prodüksiyon ve gösteri değeri yüksek etkinlikleri ortak artı olarak değerlendir.",
+            "Araştırma sonucunda yalnızca listeleme yapma; neden uygun olduğunu da açıkla.",
+        ],
+    },
+
     "public_identity": {
         "website": "boraunsal.com",
         "ai_artist_site": "yapayzekasanatcisi.com",
@@ -281,13 +345,50 @@ def profile_context_for_web(message: str = "", intent: str = "") -> str:
         purpose = "Tatil planında spa, termal ve havuz avantajdır." if any(term in folded for term in ("tatil", "termal", "gezi")) else "İş seyahatinde spa/termal/havuz öncelikli değildir."
         return f"{companion} {purpose} Karar sırası fiyat, manzara, merkeze yakınlık. Tatilde yaklaşık 10.000 TL başlangıç bütçesi referanstır; sabit üst limit değildir. Hotels.com ve resmi otel verisini kullan."
     if intent == "cinema_search" or "sinema" in folded or "film" in folded:
-        return "Bursa'da önce Cinetime ÖzdilekPark Nilüfer'i kontrol et. Bora korku, komedi, bilim kurgu ve animasyon; Tuğba aksiyon, bilim kurgu ve animasyon sever. Ortak seçimde bilim kurgu ve animasyon önceliklidir. Küçük salonda orta sıra; VIP/Gold Class fiyat farkı makulse değerlendir."
+        return (
+            "Bursa'da sinema için birinci tercih Cinetime ÖzdilekPark Nilüfer'dir; Bora ve Tuğba genelde burayı kullanır ve uygun fiyatlı bulur. "
+            "Öncelikle Türkçe dublajlı seansları tercih et. "
+            "Cinetime ÖzdilekPark'ta uygun seçenek bulunamazsa kullanıcı açıkça istemeden diğer Bursa sinemalarına genişletme; "
+            "önce diğer sinemalara da bakıp bakmaman gerektiğini sor. "
+            "Bora korku, komedi, bilim kurgu ve fantastik filmleri sever; 3D gösterimler Bora için ekstra artıdır. "
+            "Tuğba romantik komedi, bilim kurgu, komedi, aksiyon ve fantastik filmleri sever; "
+            "Harry Potter ve Yüzüklerin Efendisi çizgisindeki fantastik yapımlar özellikle uygundur. "
+            "Ortak seçimde bilim kurgu, fantastik ve komedi yüksek önceliklidir. "
+            "Romantik komediyi Tuğba için artı, Bora için nötr; korkuyu Bora için artı kabul et. "
+            "Film önerirken yalnızca tür eşleşmesine bakma; seans saati, salon tipi, 3D seçeneği, süre ve mümkünse güncel puan/eleştiriyi de değerlendir. "
+            "Kullanıcı isterse fragman bağlantısı veya resmi fragman kaynağını da araştır. "
+            "Küçük salonda orta sıra; VIP/Gold Class fiyat farkı makulse değerlendir."
+        )
     if intent == "restaurant_search" or any(term in folded for term in ("restoran", "yemek yiy", "corbaci", "corba")):
         return "Bora sebze ve sulu yemek yemez; köfte, et, fast food, etli pizza, tantuni, kokoreç, midye ve kaşarlı domates/mercimek/ezogelin çorbası uygundur; mayonez istemez. Tuğba ev yemeği sever ama ortak planda Bora'ya uyum sağlar. Manzara avantajdır; kişi başı yaklaşık 1000 TL başlangıç referansıdır. Balkon Cafe, Kadim Restaurant, Fazıl Usta Çorbacısı, Pırpır Midye, Erbaylar Balıkçısı ve Haflinger Çiftliği yalnız bağlama uygunsa tercih sinyalidir."
     if intent == "event_search":
-        return "Tuğba ile planda canlı müzik öncelikli; sonra club. Tiyatroda komedi, konserde güçlü sahne şovu tercih edilir. Yalnız gerçek etkinlik ve resmi/kanıtlanabilir tarih-saat kullan."
+        return (
+            "Bora ve Tuğba için ortak kültür tercihlerini sessizce uygula. "
+            "Konserde senfoni, Hayko Cepkin çizgisinde rock/alternatif, rap ve özel Türk Sanat Müziği konserleri yüksek önceliklidir. "
+            "Tiyatro ve sahnede komedi oyunları, kumpanya gösterileri, Anadolu Ateşi benzeri büyük dans prodüksiyonları, "
+            "Güldür Güldür ve Çok Güzel Hareketler Bunlar benzeri büyük sahne performansları uygundur. "
+            "Canlı müzik mekanlarını özellikle özel gün ve özel programlarda değerlendir. "
+            "Festival, sergi, deneyim alanı ve özel kültürel etkinlikleri de bağlama uygunsa öner. "
+            "İki kişiye de uyan etkinlikleri önce sırala; yalnız birine daha çok uyan seçeneklerde bunu açıkça belirt. "
+            "Büyük prodüksiyon ve güçlü sahne şovu ortak artıdır. "
+            "Yalnız gerçek etkinlik, gerçek mekan ve resmi/kanıtlanabilir tarih-saat kullan; fiyat varsa güncel kaynaktan doğrula."
+            "Bilet araştırmasında kaynak önceliği Biletinial, sonra Biletix, sonra resmi organizatör veya mekan sayfasıdır. "
+            "Bora biletlerini çoğunlukla Biletinial üzerinden alır; Biletix ikinci tercihtir. "
+
+        )
     if intent == "leisure_search":
-        return "Tuğba ile çok yorucu olmayan gerçek plan yap. Kahve, uygun yemek ve gerçek etkinliği dengeli sırala. Kahvaltıda Balkon Cafe veya Haflinger Çiftliği bağlama uygunsa avantajdır."
+        return (
+            "Bora ve Tuğba için çok yorucu olmayan gerçek bir program yap. "
+            "Kahve, uygun yemek, sinema, konser, tiyatro, sahne gösterisi veya canlı müzik seçeneklerini zamana göre dengeli sırala. "
+            "Bilim kurgu, fantastik ve komedi ortak yüksek önceliklidir; senfoni, rock/alternatif, rap, özel TSM, "
+            "komedi tiyatrosu, büyük dans ve sahne şovları ortak ilgi alanıdır. "
+            "Özel günlerde canlı müzik mekanları güçlü adaydır. "
+            "Planı yalnızca seçenek listesi gibi verme; neden uygun olduğunu, tahmini süreyi ve gerekiyorsa ulaşım sırasını da açıkla."
+            "Yemek seçiminde önce Bora’nın kayıtlı ve bilinen restoran tercihlerini değerlendir; yalnız şık olduğu için 5 yıldızlı otel restoranı önerme. "
+            "Spa ve termal seçenekler uygundur ancak önce ekonomik veya orta segment alternatifleri ara; lüks 5 yıldızlı seçenekleri yalnız fiyat gerçekten uygunsa ya da kullanıcı özellikle lüks isterse öner. "
+            "Fiyatı doğrulamadan bir seçeneği ucuz, makul veya bütçeye uygun diye nitelendirme. "
+
+        )
     travel_terms = ("ulasim", "otobus", "ucak", "tren", "yht", "feribot", "arabayla", "rota", "otel", "seyahat")
     if intent == "travel_search" or any(term in folded for term in travel_terms) or "gezi" in folded:
         return """Başlangıç Bursa. Yakın mesafede özel araç; uygun hat varsa TCDD/YHT; deniz geçişinde feribot/deniz otobüsü değerlendir. TAG, sonra otobüs/metro, gerekirse taksi. Otobüste Pamukkale, Kamil Koç, Lüks Karadeniz, Varan ve Özkaymak tercih sinyalidir; mümkünse ön, yoksa cam kenarı ama koltuğu satın alma ekranında doğrula. Uçakta Pegasus sonra THY; SAW, sonra IST, avantajlı direkt uçuş varsa Yenişehir. AJet'i THY diye sunma. Uçakta cam kenarı, acil çıkış değil; kısa seyahatte kabin bagajı. YHT Business fiyat farkı makulse, değilse cam kenarı. Özel araçta ücretli yolu yalnız belirgin avantaj varsa öner; İstanbul için önce Eskihisar–Topçular, sonra köprü/Yalova–Pendik/BUDO/İDO seçeneklerini güncel veriyle karşılaştır."""

@@ -6,15 +6,31 @@ import { toast } from "sonner";
 export const ChatPanel = ({ onState, extraMessage }) => {
   const [input, setInput] = useState("");
   const [msgs, setMsgs] = useState([]);
+  const [conversationId, setConversationId] = useState(() => {
+    return localStorage.getItem("nova-conversation-id") || "default";
+  });
   const [busy, setBusy] = useState(false);
   const [attachments, setAttachments] = useState([]);
   const scrollRef = useRef(null);
   const audioRef = useRef(null);
+
+  useEffect(() => {
+    const stopOtherNovaAudio = () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.currentTime = 0;
+        audioRef.current = null;
+      }
+    };
+
+    window.addEventListener("nova-stop-audio", stopOtherNovaAudio);
+    return () => window.removeEventListener("nova-stop-audio", stopOtherNovaAudio);
+  }, []);
   const fileRef = useRef(null);
 
   useEffect(() => {
-    chatApi.history().then((rows) => setMsgs(rows)).catch(() => {});
-  }, []);
+    chatApi.history(conversationId).then((rows) => setMsgs(rows)).catch(() => {});
+  }, [conversationId]);
 
   useEffect(() => {
     if (extraMessage) {
@@ -28,6 +44,21 @@ export const ChatPanel = ({ onState, extraMessage }) => {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [msgs]);
+
+  const startNewConversation = () => {
+    const id = `chat-${Date.now()}`;
+    localStorage.setItem("nova-conversation-id", id);
+    setConversationId(id);
+    setMsgs([]);
+    setInput("");
+    setAttachments([]);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    window.dispatchEvent(new Event("nova-stop-audio"));
+    onState?.("idle");
+  };
 
   const send = async () => {
     const text = input.trim();
@@ -50,13 +81,14 @@ export const ChatPanel = ({ onState, extraMessage }) => {
             selectedFiles,
             text || "Bu dosyaları birlikte incele ve önemli bilgileri çıkar."
           )
-        : await chatApi.send(text);
+        : await chatApi.send(text, conversationId);
 
       const { answer, sources = [] } = result;
       setMsgs(m => [...m, { role: "assistant", content: answer, sources, created_at: new Date().toISOString() }]);
       onState?.("speaking");
       try {
         const audioBlob = await voiceApi.tts(answer);
+        window.dispatchEvent(new Event("nova-stop-audio"));
         const url = URL.createObjectURL(audioBlob);
         if (audioRef.current) audioRef.current.pause();
         audioRef.current = new Audio(url);
@@ -82,8 +114,20 @@ export const ChatPanel = ({ onState, extraMessage }) => {
   return (
     <div className="flex min-w-0 max-w-full flex-col h-full overflow-hidden nova-glass rounded-2xl" data-testid="chat-panel">
       <div className="p-4 border-b border-[color:var(--nova-border)]">
-        <div className="font-mono-nova text-xs uppercase tracking-[0.25em] text-[color:var(--nova-text-3)]">NOVA ile sohbet</div>
-        <div className="font-serif-display text-xl text-[color:var(--nova-text)] mt-1">Nasıl yardımcı olabilirim Bora?</div>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="font-mono-nova text-xs uppercase tracking-[0.25em] text-[color:var(--nova-text-3)]">NOVA ile sohbet</div>
+            <div className="font-serif-display text-xl text-[color:var(--nova-text)] mt-1">Nasıl yardımcı olabilirim Bora?</div>
+          </div>
+          <button
+            type="button"
+            onClick={startNewConversation}
+            className="shrink-0 rounded-lg border border-[color:var(--nova-border)] px-2.5 py-1.5 text-[10px] uppercase tracking-wider text-[color:var(--nova-text-2)] hover:text-[color:var(--nova-amber)] hover:border-[color:var(--nova-amber)] transition-colors"
+            data-testid="new-chat-button"
+          >
+            Yeni Sohbet
+          </button>
+        </div>
       </div>
 
       <div ref={scrollRef} className="flex-1 min-w-0 max-w-full overflow-x-hidden overflow-y-auto px-4 py-4 space-y-4 min-h-0">

@@ -185,7 +185,20 @@ def route_message(message: str, now: datetime) -> RouteDecision:
     explicit_research = any(term in folded for term in ("arastir", "internetten", "webde", "web'de", "guncel bilgi", "resmi sitesini", "sosyal medya"))
     if provider or explicit_research:
         provider_intent = "web_search"
-        if provider in {"obilet", "pegasus", "thy", "ajet", "tcdd", "ido", "budo"}:
+
+        # Araştırma isteğinde yalnız "araştır" kelimesine bakma;
+        # önce kullanıcının araştırdığı konuyu belirle.
+        if any(term in folded for term in ("konser", "tiyatro", "etkinlik", "canli muzik", "sahne gosterisi", "festival")):
+            provider_intent = "event_search"
+        elif any(term in folded for term in ("sinema", "film seans", "vizyondaki film", "film ara")):
+            provider_intent = "cinema_search"
+        elif any(term in folded for term in ("otel", "konaklama")):
+            provider_intent = "hotel_search"
+        elif any(term in folded for term in ("restoran", "yemek yiy", "corbaci", "corba bul")):
+            provider_intent = "restaurant_search"
+        elif any(term in folded for term in ("seyahat", "gezi", "ulasim", "otobus", "ucak", "tren", "feribot", "arabayla")):
+            provider_intent = "travel_search"
+        elif provider in {"obilet", "pegasus", "thy", "ajet", "tcdd", "ido", "budo"}:
             provider_intent = "travel_search"
         elif provider == "hotels":
             provider_intent = "hotel_search"

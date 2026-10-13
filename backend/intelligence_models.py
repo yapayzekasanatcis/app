@@ -1,5 +1,5 @@
 """Cost-aware general knowledge and grounded live web research services."""
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 from PIL import Image
 import logging
@@ -7,6 +7,7 @@ import json
 import os
 import re
 
+from openai import AsyncOpenAI
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent, FileContentWithMimeType
 
 import google_integration as gint
@@ -17,11 +18,93 @@ from personal_memory import profile_context_for_web
 WEB_FAILURE = "Bu bilgiyi canlı kaynaktan doğrulayamadım, Bora."
 logger = logging.getLogger("nova.intelligence")
 
+TURKISH_MONTHS = {
+    "ocak": 1,
+    "subat": 2,
+    "şubat": 2,
+    "mart": 3,
+    "nisan": 4,
+    "mayis": 5,
+    "mayıs": 5,
+    "haziran": 6,
+    "temmuz": 7,
+    "agustos": 8,
+    "ağustos": 8,
+    "eylul": 9,
+    "eylül": 9,
+    "ekim": 10,
+    "kasim": 11,
+    "kasım": 11,
+    "aralik": 12,
+    "aralık": 12,
+}
+
+
+def _explicit_date_range_from_message(message: str):
+    """Parse same-month Turkish ranges such as 13-19 Ekim 2026."""
+    m = re.search(
+        r"\b(\d{1,2})\s*[-–—]\s*(\d{1,2})\s+"
+        r"(Ocak|Şubat|Subat|Mart|Nisan|Mayıs|Mayis|Haziran|Temmuz|"
+        r"Ağustos|Agustos|Eylül|Eylul|Ekim|Kasım|Kasim|Aralık|Aralik)"
+        r"(?:\s+(\d{4}))?",
+        message,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+
+    start_day = int(m.group(1))
+    end_day = int(m.group(2))
+    month_name = m.group(3).lower()
+    year = int(m.group(4)) if m.group(4) else datetime.now(gint.ISTANBUL_TZ).year
+    month = TURKISH_MONTHS.get(month_name)
+
+    if not month:
+        return None
+
+    try:
+        return date(year, month, start_day), date(year, month, end_day)
+    except ValueError:
+        return None
+
+
+def _answer_contains_out_of_range_event(answer: str, requested_range) -> bool:
+    """Detect explicit event dates outside the requested date window."""
+    if not answer or not requested_range:
+        return False
+
+    start_date, end_date = requested_range
+
+    for match in re.finditer(
+        r"\b(\d{1,2})\s+"
+        r"(Ocak|Şubat|Subat|Mart|Nisan|Mayıs|Mayis|Haziran|Temmuz|"
+        r"Ağustos|Agustos|Eylül|Eylul|Ekim|Kasım|Kasim|Aralık|Aralik)"
+        r"\s+(\d{4})\b",
+        answer,
+        flags=re.IGNORECASE,
+    ):
+        day = int(match.group(1))
+        month = TURKISH_MONTHS.get(match.group(2).lower())
+        year = int(match.group(3))
+
+        if not month:
+            continue
+
+        try:
+            event_date = date(year, month, day)
+        except ValueError:
+            continue
+
+        if event_date < start_date or event_date > end_date:
+            return True
+
+    return False
+
 SOURCE_MATRIX = {
     "hotel_search": "Önce Hotels.com, sonra otelin resmi sitesi; yalnız gerçek otel kullan.",
     "restaurant_search": "Önce resmi mekan/menu bilgisi ve Yemeksepeti; gerçek çalışma saati ve menü doğrula.",
-    "cinema_search": "Önce Cinetime ÖzdilekPark Nilüfer resmi programı; yoksa diğer gerçek Bursa sinemaları.",
-    "event_search": "Önce resmi mekan, organizatör veya bilet platformu; gerçek tarih ve saat zorunlu.",
+    "cinema_search": "Yalnızca önce Cinetime ÖzdilekPark Nilüfer resmi programı. Türkçe dublaj öncelikli. Kullanıcı istemeden diğer Bursa sinemalarına genişletme.",
+    "event_search": "Önce Biletinial, sonra Biletix; ardından resmi organizatör veya mekan sayfası. Gerçek tarih, saat, mekan ve mümkünse fiyat zorunlu.",
     "leisure_search": "Gerçek mekanların resmi sayfaları ve güncel etkinlik kaynaklarıyla plan yap.",
 }
 
@@ -133,7 +216,18 @@ def _looks_truncated(answer: str, raw) -> bool:
         return True
 
     text = (answer or "").rstrip()
-    if not text or len(text) < 1200:
+    if not text:
+        return False
+
+    # "2." / "3." gibi yeni madde başlayıp içerik gelmeden biten cevap yarımdır.
+    if re.search(r"(?:^|\n)\s*\d+\.\s*$", text):
+        return True
+
+    # Başlık/markdown işaretiyle yarım kalan cevapları da yakala.
+    if re.search(r"(?:\*\*|:|-)\s*$", text) and len(text) > 500:
+        return True
+
+    if len(text) < 1200:
         return False
 
     return not text.endswith((".", "!", "?", ")", "]"))
@@ -169,6 +263,8 @@ def _source_instruction(intent: str, folded: str) -> str:
         return "Önce MediaMarkt, sonra Hepsiburada."
     if any(term in folded for term in ("hepsiburada", "trendyol", "alisveris")):
         return "Önce Hepsiburada, sonra Trendyol."
+    if intent == "event_search":
+        return "Önce Biletinial; sonra Biletix; ardından resmi organizatör veya mekan sayfası. Etkinlik adı, tarih, saat, mekan ve varsa fiyatı doğrula."
     return SOURCE_MATRIX.get(intent, "Resmi kaynakları ve güvenilir ikincil kaynakları kullan.")
 
 
@@ -192,12 +288,46 @@ async def answer_live_web(
     prior_context: str = "",
 ) -> tuple[str, list[dict]]:
     now = datetime.now(gint.ISTANBUL_TZ)
-    system = """You MUST use Google Search for every query and preserve verifiable source URLs. Sen NOVA'sın. Doğal, düzgün Türkiye Türkçesiyle kısa ve operasyonel yaz. Uydurma kelime veya bozuk cümle kullanma. Ham arama sonucu veya rapor gibi konuşma; bulduğun veriyi yorumlayıp Bora ile sohbet eder gibi aktar. Gereksiz maddeleme yapma; karşılaştırma gerçekten faydalıysa liste veya tablo kullan. Uygun olduğunda doğal bir sonraki adım öner. Sahte mekan, fiyat, saat, sefer, menü, müsaitlik, koltuk veya film seansı üretme. Kullanıcı birden fazla seçenek/yöntem istediğinde hepsini tek seferde doğrulayamıyorsan bütün cevabı reddetme: doğrulayabildiğin seçenekleri kaynaklı biçimde ver, doğrulayamadığın her seçeneği ayrı ve açık biçimde 'doğrulanamadı' diye işaretle. Bir sağlayıcı özellikle istendiyse o sağlayıcıya ait gerçek kaynak bulunmadan onun adına fiyat/ürün/sefer yazma. Personal Memory karar filtresini sessiz uygula; kullanıcı istemedikçe profil listesi okuma. Satın alma veya rezervasyon yaptığını söyleme. Kaynak URL'lerini ana cevap metnine doldurma."""
+    system = """You MUST use live web search for every query and preserve verifiable source URLs. Sen NOVA'sın. Doğal, düzgün Türkiye Türkçesiyle kısa ve operasyonel yaz. Uydurma kelime veya bozuk cümle kullanma. Ham arama sonucu veya rapor gibi konuşma; bulduğun veriyi yorumlayıp Bora ile sohbet eder gibi aktar. Gereksiz maddeleme yapma; karşılaştırma gerçekten faydalıysa liste veya tablo kullan. Uygun olduğunda doğal bir sonraki adım öner. Sahte mekan, fiyat, saat, sefer, menü, müsaitlik, koltuk veya film seansı üretme. Kullanıcı birden fazla seçenek/yöntem istediğinde hepsini tek seferde doğrulayamıyorsan bütün cevabı reddetme: doğrulayabildiğin seçenekleri kaynaklı biçimde ver, doğrulayamadığın her seçeneği ayrı ve açık biçimde 'doğrulanamadı' diye işaretle. Bir sağlayıcı özellikle istendiyse o sağlayıcıya ait gerçek kaynak bulunmadan onun adına fiyat/ürün/sefer yazma. Personal Memory karar filtresini sessiz uygula; kullanıcı istemedikçe profil listesi okuma. Satın alma veya rezervasyon yaptığını söyleme. Bir mekanın pahalı/ucuz/makul olduğunu güncel fiyat verisi olmadan söyleme; fiyat doğrulanamıyorsa bunu açıkça belirt. Kullanıcının istemediği restoran veya genel mekan önerileriyle etkinlik listesini doldurma. Kaynak URL'lerini ana cevap metnine doldurma."""
     search_request = f"Araştırma zamanı: {now.isoformat()}. Konum: Bursa, Türkiye.\nSoru: {message}"
     folded = fold_turkish(message)
+    requested_date_range = _explicit_date_range_from_message(message)
     search_request += "\nKaynak önceliği: " + _source_instruction(intent, folded)
     if intent == "cinema_search":
-        search_request += f"\nBu zaman-kritik bir film seansı sorgusudur. Önce Google'da 'Cinetime ÖzdilekPark Nilüfer {now.date().isoformat()} film seansları' resmi programını ara; yarın ifadesi için ertesi günün gerçek seanslarını doğrula. Cinetime sonucu yoksa gerçek Bursa sinemalarına genişlet ve bunu açıkça söyle."
+        search_request += (
+            f"\nBu zaman-kritik bir film seansı sorgusudur. "
+            f"Yalnızca önce Cinetime ÖzdilekPark Bursa Nilüfer için {now.date().isoformat()} tarihli gerçek programı araştır. "
+            "Kaynak önceliği katıdır: film adı, seans saati, Türkçe dublaj/altyazı, salon ve varsa 3D bilgisi için önce cinetime.com.tr resmi sayfasını kullan. "
+            "boxofficeturkiye.com kaynağını sinema araştırmalarında ASLA kullanma; bu domain yasaktır. "
+            "Resmi Cinetime kaynağında bulunan bilgiyi BiletLink, haber sitesi, şehir rehberi veya başka ikincil kaynakla değiştirme. "
+            "Resmi Cinetime'da bulunmayan bir ayrıntıyı ikincil kaynaktan kullanırsan bunun ikincil kaynak olduğunu açıkça belirt. "
+            "Türkçe dublajlı seansları önceliklendir. Kullanıcının zevklerine uyan filmleri önce sırala. "
+            "Bora için korku ve 3D artıdır; Bora ve Tuğba için bilim kurgu, fantastik ve komedi ortak yüksek önceliklidir; Tuğba için aksiyon ve romantik komedi artıdır. "
+            "Cinetime ÖzdilekPark'ta uygun seçenek bulunamazsa kullanıcı açıkça istemeden diğer Bursa sinemalarına genişletme. "
+            "Bunun yerine burada uygun seçenek bulamadığını söyle ve diğer Bursa sinemalarına da bakıp bakmaman gerektiğini sor."
+        )
+
+    if intent == "event_search":
+        search_request += (
+            "\nBu bir ETKİNLİK araştırmasıdır. Restoran, kafe veya sıradan mekan önerisini etkinlik gibi sunma. "
+            "Yalnız belirli tarih/saatte gerçekleşen konser, tiyatro, sahne gösterisi, dans gösterisi, festival, "
+            "özel kültür-sanat etkinliği veya kullanıcının tercihlerine uyan benzer gerçek etkinlikleri araştır. "
+            "Kullanıcı ayrıca akşam planı, yemek veya özel gün istemediyse restoran ekleme. "
+            "Her öneride etkinlik adı, tarih, saat, mekan ve neden Bora/Tuğba'ya uygun olduğunu belirt. "
+            "Kaynak doğrulama sırası katıdır: önce Biletinial, sonra Biletix, sonra resmi organizatör veya mekan sayfası. "
+            "Bir etkinlik Biletinial'da bulunuyorsa tarih, saat, mekan ve fiyat için Biletinial bilgisini esas al; "
+            "ikincil sitelerdeki farklı saat veya fiyatı kullanma. "
+            "Biletinial'da yoksa Biletix'i esas al. İkisinde de yoksa resmi organizatör veya mekan sayfasını kullan. "
+            "Biletinial veya Biletix'te en az bir etkinlik bulduysan 'bu platformlarda etkinlik bulunamadı' deme; "
+            "yalnız kaç etkinliği bu platformlardan doğrulayabildiğini doğru şekilde belirt. "
+            "Bursadanevar, Biletevo, NeYapsak, Yapılacaklar.com, haber ve şehir rehberi siteleri yalnız keşif kaynağıdır. "
+            "Bir etkinliği bu sitelerden keşfettiysen tarih/saat/mekan bilgisini mümkünse resmi mekan veya organizatör sayfasından tekrar doğrula. "
+            "Resmi doğrulama bulunamazsa bu etkinliği kesin bilgi gibi sunma ve gerekirse listeyi 5'ten az seçenekle tamamla. "
+            "Fiyat/bilet bilgisi bu birincil kaynaklardan doğrulanabiliyorsa yaz; doğrulanamıyorsa açıkça 'fiyat doğrulanamadı' de. "
+            "Kullanıcı 5 seçenek istediyse 5 gerçek ve doğrulanmış seçenek bulmaya çalış; yalnız daha azı doğrulanabiliyorsa "
+            "sahte seçenek tamamlamak yerine kaç tanesini doğrulayabildiğini açıkça söyle. "
+            "Özel gün, doğum günü veya romantik planı kullanıcı açıkça istemediyse kendiliğinden varsayma."
+        )
     if intent == "restaurant_search":
         search_request += f"\nBu zaman-kritik yerel işletme sorgusudur. Google Search ile Bursa'daki gerçek mekanların {now.date().isoformat()} güncel resmi sayfa, menü, telefon ve çalışma saati kaynaklarını ara. Saat tam doğrulanamıyorsa mekanı yine sun ama 'gitmeden önce teyit etmek iyi olur' de."
     preference_context = profile_context_for_web(message, intent)
@@ -209,57 +339,228 @@ async def answer_live_web(
         search_request += "\nÖzellikle O-5/Osmangazi Köprüsü, Eskihisar–Topçular araçlı feribotu ve Yalova–Pendik araçlı İDO seçeneklerinin güncel ücret, sefer ve toplam sürelerini karşılaştır."
     if prior_context:
         search_request += "\nÖnceki konuşma bağlamı: " + prior_context
-    search_request += "\nCanlı Google Search kullanarak güncel kaynaklarla araştır, doğrula ve en mantıklı seçenekleri karşılaştır."
+    search_request += "\nCanlı web araması kullanarak güncel kaynaklarla araştır, doğrula ve en mantıklı seçenekleri karşılaştır."
 
     answer, sources = "", []
+
+    # ANA MOTOR — OpenAI Responses API + web_search
+    openai_client = AsyncOpenAI(
+        api_key=os.environ["EMERGENT_LLM_KEY"],
+        base_url=os.environ["OPENAI_BASE_URL"],
+    )
+
     for attempt in range(2):
         request_text = search_request
+
         if attempt:
-            if intent == "restaurant_search":
-                request_text = (
-                    "Zorunlu canlı Google Search yap. Bursa için şu gerçek adayların resmi web/menü/telefon/çalışma saati kaynaklarını ara: "
-                    "Kadim Restaurant, Balkon Cafe & Restaurant, Fazıl Usta Çorbacısı, Pırpır Midye, Erbaylar Balıkçısı, Haflinger Çiftliği. "
-                    "Soruya uygun doğrulayabildiğin 2-3 mekanı kaynak URL'leriyle sun; saat veya menü doğrulanamazsa yalnız o alanın teyit edilmesi gerektiğini söyle.\n" + search_request
-                )
-            else:
-                request_text = (
-                    "Zorunlu canlı Google Search yap. Genel bilgiden cevap verme. "
-                    "Her güncel iddiayı doğrulanabilir kaynak URL'siyle destekle.\n" + search_request
-                )
-        chat = (
-            LlmChat(
-                api_key=os.environ["EMERGENT_LLM_KEY"],
-                session_id=f"{session_id}:web:{attempt}",
-                system_message=system,
+            request_text = (
+                "Önceki araştırma eksik veya yarım kaldı. "
+                "Aynı araştırmayı yeniden yap; daha kısa yaz fakat kullanıcının istediği "
+                "bütün seçenekleri tamamla. Doğrulanmamış bilgi üretme. "
+                "Yarım madde veya yarım cümle bırakma.\n"
+                + search_request
             )
-            .with_model("gemini", "gemini-2.5-flash")
-            .with_tools([{"googleSearch": {}}])
-            .with_params(temperature=0 if attempt else 0.15, max_tokens=3000)
-        )
+
         try:
-            response = await chat.send_message_with_tools(UserMessage(text=request_text))
-            answer = (response.content or "").strip()
-            sources = _annotation_sources(response.raw, answer)
+            web_tool = {"type": "web_search"}
+
+            if intent == "cinema_search":
+                request_text = (
+                    "Önce özellikle şu sorguyla resmi kaynağı ara: "
+                    "site:cinetime.com.tr Cinetime ÖzdilekPark Bursa Nilüfer bugün film seansları Türkçe dublaj. "
+                    "Film adı, seans saati, salon ve dil bilgisini mümkün olduğunca doğrudan cinetime.com.tr üzerinden doğrula. "
+                    "Resmi Cinetime sayfasında bulamadığın bilgiyi üçüncü taraf bir siteden kesin bilgi gibi sunma.\n"
+                    + request_text
+                )
+
+            if intent == "event_search":
+                request_text = (
+                    "Etkinlik araştırmasında kullanıcının mesajındaki şehir ve tarih aralığını aynen kullan. "
+                    "Önce site:biletinial.com üzerinde, sonra site:biletix.com üzerinde aynı şehir ve tarih aralığıyla "
+                    "konser, tiyatro ve sahne etkinliklerini araştır. "
+                    "Kullanıcının istemediği farklı tarih aralığına geçme. "
+                    "Önce bu iki kaynaktan gerçek sonuç bulmaya çalış. "
+                    "Biletinial veya Biletix'te bulunmayan etkinliğin fiyatını ikincil kaynaktan uydurma.\n"
+                    + request_text
+                )
+
+            response = await openai_client.responses.create(
+                model="gpt-4.1-mini",
+                instructions=(
+                    system
+                    + "\nVerilen Araştırma zamanı değerini mevcut tarih ve saat için tek otorite kabul et. "
+                    "Web sayfalarındaki eski 'bugün', 'yarın', 'bu hafta' ifadelerini mevcut tarih sanma. "
+                    "Kullanıcının verdiği tarih aralığının dışındaki etkinliği ASLA önerme. "
+                    "Örneğin 13-19 Ekim istenmişse 12 Ekim veya 20 Ekim ve sonrası sonuçlarını listeye alma. "
+                    "Etkinlik cevabında doğal ve düzgün Türkiye Türkçesi kullan. "
+                    "Cevabın giriş bölümü ile kaynaklar birbiriyle çelişmesin. "
+                    "Biletix veya Biletinial kaynağı kullandıysan bu platformlarda sonuç bulunamadığını söyleme. "
+                    "Bozuk ek, anlamsız tamlama veya makine çevirisi gibi cümle üretme. "
+                    "Kullanıcının tercihlerini neden uygun olduğu bölümünde kısa ve doğal biçimde açıkla."
+                ),
+                tools=[web_tool],
+                tool_choice="required",
+                input=request_text,
+            )
+
+            answer = (response.output_text or "").strip()
+            sources = _annotation_sources(response, answer)
+
             if answer and sources:
+                if intent == "cinema_search":
+                    cinema_urls = " ".join(
+                        str(item.get("url", "")).lower()
+                        for item in sources
+                    )
+
+                    if "boxofficeturkiye.com" in cinema_urls:
+                        if attempt == 0:
+                            search_request = (
+                                "boxofficeturkiye.com yasaklı kaynaktır. "
+                                "Bu domaini tamamen dışla. "
+                                "Resmi Cinetime kaynağını yeniden ara; gerekirse daha az film ver ama Box Office Türkiye kullanma.\n"
+                                + search_request
+                            )
+                            continue
+                        else:
+                            logger.warning("Cinema answer used forbidden Box Office Türkiye source")
+                            return WEB_FAILURE, []
+
+                    has_official_cinetime = "cinetime.com.tr" in cinema_urls
+
+                    if not has_official_cinetime:
+                        if attempt == 0:
+                            search_request = (
+                                "İlk araştırmada resmi Cinetime kaynağı gelmedi. "
+                                "Yeniden araştır ve önce site:cinetime.com.tr üzerinden "
+                                "Cinetime ÖzdilekPark Bursa Nilüfer film/seans sayfalarını bul. "
+                                "Box Office Türkiye, BiletLink, haber veya şehir rehberi kaynaklarını "
+                                "resmi Cinetime yerine ana kaynak yapma.\n"
+                                + search_request
+                            )
+                            continue
+                        else:
+                            logger.warning(
+                                "Cinema answer has no official Cinetime source after retry"
+                            )
+                            return WEB_FAILURE, []
+
+                if (
+                    intent == "event_search"
+                    and requested_date_range
+                    and _answer_contains_out_of_range_event(answer, requested_date_range)
+                ):
+                    if attempt == 0:
+                        start_date, end_date = requested_date_range
+                        search_request = (
+                            f"KRİTİK TARİH KURALI: Yalnızca {start_date.isoformat()} ile "
+                            f"{end_date.isoformat()} arasındaki etkinlikleri listele. "
+                            "Bu aralığın dışındaki tek bir etkinliği bile cevaba alma. "
+                            "5 seçenek bulamazsan daha az seçenek ver; tarih aralığını doldurmak için dışarı çıkma. "
+                            "Türkçeyi kısa, doğal ve düzgün yaz.\n"
+                            + search_request
+                        )
+                        continue
+                    else:
+                        logger.warning(
+                            "Event answer still contains out-of-range dates after retry"
+                        )
+                        return WEB_FAILURE, []
+
+                if intent == "event_search":
+                    event_urls = " ".join(
+                        str(item.get("url", "")).lower()
+                        for item in sources
+                    )
+                    has_primary_event_source = (
+                        "biletinial.com" in event_urls
+                        or "biletix.com" in event_urls
+                    )
+
+                    if not has_primary_event_source and attempt == 0:
+                        search_request = (
+                            "İlk araştırmada Biletinial veya Biletix kaynağı gelmedi. "
+                            "Yeniden araştır ve önce Biletinial, sonra Biletix sonuçlarını bul. "
+                            "Bu iki kaynaktan doğrulanamayan saat/fiyat bilgisini kesin bilgi gibi verme.\n"
+                            + search_request
+                        )
+                        continue
+
                 if not _sources_satisfy_request(sources, folded) and attempt == 0:
                     search_request = (
-                        "Kullanıcının açıkça istediği kaynakları atlama. "
-                        "İstenen sağlayıcıların her biri için doğrulanabilir gerçek kaynak URL'si bul. "
-                        "Bulamadığın sağlayıcı için veri uydurma; açıkça doğrulanamadığını söyle.\n"
+                        "Kullanıcının açıkça istediği kaynak önceliğine katı biçimde uy. "
+                        "Etkinlik aramasında Biletinial bulunduysa saat, tarih, mekan ve fiyat için onu tek ana doğrulama kaynağı kabul et. "
+                        "Biletinial yoksa Biletix; o da yoksa resmi organizatör veya mekan sayfasına geç. "
+                        "İkincil sitelerdeki fiyat veya saat bilgisini birincil kaynak yerine kullanma.\n"
                         + search_request
                     )
                     continue
-                if _looks_truncated(answer, response.raw) and attempt == 0:
+
+                if _looks_truncated(answer, response) and attempt == 0:
                     search_request = (
-                        "Önceki yanıt çıktı sınırına takıldı. Aynı araştırmayı yeniden yap; "
-                        "cevabı daha kısa tut ama kullanıcının istediği bütün seçenekleri, "
-                        "fiyat/saat/süre gibi kritik alanları eksiksiz bitir. Yarım cümle bırakma.\n"
+                        "Önceki cevap yarım kaldı. Daha kısa yaz ama bütün istenen maddeleri bitir. "
+                        "Yarım başlık, yarım madde veya yarım cümle bırakma.\n"
                         + search_request
                     )
                     continue
+
                 break
+
         except Exception as exc:
-            logger.error("Live web search attempt=%s failed type=%s", attempt + 1, type(exc).__name__)
+            logger.error(
+                "OpenAI live web attempt=%s failed type=%s",
+                attempt + 1,
+                type(exc).__name__,
+            )
+
+    # YEDEK MOTOR — OpenAI başarısızsa mevcut Gemini + Google Search
+    if not answer or not sources:
+        logger.warning("OpenAI web search failed; Gemini fallback starting")
+        answer, sources = "", []
+
+        for attempt in range(2):
+            request_text = search_request
+
+            if attempt:
+                request_text = (
+                    "Zorunlu canlı Google Search yap. Genel bilgiden cevap verme. "
+                    "Güncel iddiaları doğrulanabilir kaynaklarla destekle. "
+                    "Cevabı kısa tut ama bütün istenen maddeleri tamamla.\n"
+                    + search_request
+                )
+
+            chat = (
+                LlmChat(
+                    api_key=os.environ["EMERGENT_LLM_KEY"],
+                    session_id=f"{session_id}:web:fallback:{attempt}",
+                    system_message=system,
+                )
+                .with_model("gemini", "gemini-2.5-flash")
+                .with_tools([{"googleSearch": {}}])
+                .with_params(
+                    temperature=0 if attempt else 0.15,
+                    max_tokens=3000,
+                )
+            )
+
+            try:
+                response = await chat.send_message_with_tools(
+                    UserMessage(text=request_text)
+                )
+                answer = (response.content or "").strip()
+                sources = _annotation_sources(response.raw, answer)
+
+                if answer and sources:
+                    if _looks_truncated(answer, response.raw) and attempt == 0:
+                        continue
+                    break
+
+            except Exception as exc:
+                logger.error(
+                    "Gemini fallback attempt=%s failed type=%s",
+                    attempt + 1,
+                    type(exc).__name__,
+                )
 
     if not answer or not sources:
         logger.warning("Live web search returned no verifiable citations after retry")
