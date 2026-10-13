@@ -190,7 +190,18 @@ def route_message(message: str, now: datetime) -> RouteDecision:
         # önce kullanıcının araştırdığı konuyu belirle.
         if any(term in folded for term in ("konser", "tiyatro", "etkinlik", "canli muzik", "sahne gosterisi", "festival")):
             provider_intent = "event_search"
-        elif any(term in folded for term in ("sinema", "film seans", "vizyondaki film", "film ara")):
+        elif any(term in folded for term in (
+            "sinema",
+            "cinetime",
+            "film",
+            "filmler",
+            "filmleri",
+            "film seans",
+            "film seansi",
+            "film seanslari",
+            "vizyondaki film",
+            "film ara",
+        )):
             provider_intent = "cinema_search"
         elif any(term in folded for term in ("otel", "konaklama")):
             provider_intent = "hotel_search"
@@ -220,7 +231,16 @@ def route_message(message: str, now: datetime) -> RouteDecision:
 
     external_map = [
         ("hotel_search", ("otel", "konaklama")),
-        ("cinema_search", ("sinema", "film seans")),
+        ("cinema_search", (
+            "sinema",
+            "cinetime",
+            "film",
+            "filmler",
+            "filmleri",
+            "film seans",
+            "film seansi",
+            "film seanslari",
+        )),
         ("restaurant_search", ("restoran", "yemek yiy", "corbaci", "corba bul")),
         ("shopping_search", ("laptop", "urun bul", "alisveris")),
         ("event_search", ("konser", "tiyatro", "etkinlik", "canli muzik")),
